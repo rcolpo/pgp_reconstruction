@@ -1,0 +1,4 @@
+include pgp_reconstruction/data/input/*.*
+include pgp_reconstruction/data/generated/*.*
+include pgp_reconstruction/dependencies/*
+
