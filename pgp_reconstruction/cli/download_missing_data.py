@@ -5,6 +5,7 @@ import os
 import requests
 import platform
 from bs4 import BeautifulSoup
+import zipfile
 
 def get_google_drive_files(folder_url):
 	response = requests.get(folder_url)
@@ -47,7 +48,7 @@ def download_missing_files():
 	data_files = os.listdir(data_folder)
 
 	for file_name, file_id in google_drive_files:
-		elif file_name not in data_files:
+		if file_name not in data_files:
 			print(f'Downloading {file_name}...')
 			download_file(file_name, file_id, data_folder)
 			
@@ -58,9 +59,11 @@ def download_missing_files():
 	dependencies_folder = os.path.join(project_dir, 'dependencies')
 	dependencies_files = os.listdir(dependencies_folder)
 
-	for file_name, file_id in google_drive_files:
-		if file_name == 'MinPath_master.zip':
-			if 'MinPath_master' not in dependencies_files:
+	minPathMissing = 1
+	if 'MinPath_master' not in dependencies_files:
+		for file_name, file_id in google_drive_files:
+			continue
+			if file_name == 'MinPath_master.zip':
 				#Download modified version of minPath
 				download_file(file_name, file_id, dependencies_folder)
 				
@@ -69,12 +72,14 @@ def download_missing_files():
 					zip_ref.extractall(os.path.join(project_dir, 'dependencies'))
 					
 				os.remove(os.path.join(project_dir, 'dependencies', 'MinPath_master.zip'))
+	else: minPathMissing = 0
+		
 	
 	#check if prodigal is available. If not, download official release
 	prodigal = False
 	for file in dependencies_folder:
 		if 'prodigal' in file: prodigal = True
-	if prodigal =) False:	
+	if prodigal == False:	
 		if platform.system() == 'Windows':
 			prodigalURL = 'https://github.com/hyattpd/Prodigal/releases/download/v2.6.3/prodigal.windows.exe'
 		if platform.system() == 'Darwin':
@@ -90,6 +95,8 @@ def download_missing_files():
 				file.write(chunk)
 	
 	print('Sync complete.')
+	
+	return minPathMissing
 	
 
 

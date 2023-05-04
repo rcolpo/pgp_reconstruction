@@ -1,10 +1,12 @@
 import pickle
 from pgp_reconstruction import project_dir
-from pgp_reconstruction.dependencies.MinPath_master.MinPath import MinPathMain
 from statistics import median
 import sys
 import os
 import datetime
+
+try:from pgp_reconstruction.dependencies.MinPath_master.MinPath import MinPathMain
+except: pass
 
 
 def findBestPerRead(top60, swissProtIds, rxnsInSoftSyn, subunits, sprotSeqAndGenDict, geneAndProteinNamePerSeqId):

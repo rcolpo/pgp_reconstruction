@@ -4,7 +4,7 @@ from pgp_reconstruction.reconstruction.findOrfs import findOrfs
 from pgp_reconstruction.reconstruction.prune_universal_model import prune_model
 from pgp_reconstruction.reconstruction.scoring import reaction_scoring
 from pgp_reconstruction.reconstruction.diamond import run_blast, load_diamond_results
-from pgp_reconstruction.cli import download_missing_files
+from pgp_reconstruction.cli.download_missing_data import download_missing_files
 from reframed import load_cbmodel
 from reframed.io.sbml import sanitize_id
 import argparse
@@ -21,10 +21,13 @@ from multiprocessing import freeze_support
 
 def first_run_check():
 
-	download_missing_files()
-
 	diamond_db = project_dir + config.get('generated', 'diamond_db')
 	if not os.path.exists(diamond_db):
+	
+		#only tries to connect to internet to download files while diamond_db is not found
+		firstRun = download_missing_files()
+		if firstRun: return firstRun
+	
 		print("Running diamond for the first time, please wait while we build the internal database...")
 		fasta_file = project_dir + config.get('generated', 'fasta_file')
 		cmd = ['diamond', 'makedb', '--in', fasta_file, '-d', diamond_db[:-5]]
@@ -35,6 +38,8 @@ def first_run_check():
 		else:
 			if exit_code != 0:
 				raise ValueError('Failed to run diamond (wrong arguments).')
+				
+	return firstRun
 
 
 def loadConstraints(soft, constraintsFromFile, cobraModel, reframedModel, sufix=''):
@@ -409,7 +414,11 @@ def main():
 		
 	
 	#check if diamond file exists on data folder
-	first_run_check()
+	firstRun = first_run_check()
+	
+	if firstRun:
+		print('\n########\nThis was pgp_reconstruction first run. Files were included. Please restart the application for normal usage. If the problem persists, manually download the missing files from:\n https://drive.google.com/drive/u/1/folders/1hkgjXY9DCY49xz1WBiTjinHCgXpBVqWs \n########\n')
+		return
 
 	if len(args.input) > 1:
 		parser.error('Can only accept one input per run. If your file name has spaces, try using using double quotes ( " ) instead of single quotes ( \' ), or replace the white space by underscore signs.')

@@ -1,4 +1,6 @@
-include pgp_reconstruction/data/input/*.*
-include pgp_reconstruction/data/generated/*.*
-include pgp_reconstruction/dependencies/*
-
+recursive-include pgp_reconstruction *
+recursive-include pgp_reconstruction/cli *
+recursive-include pgp_reconstruction/data/generated *
+recursive-include pgp_reconstruction/data/input *
+recursive-include pgp_reconstruction/reconstruction *
+recursive-include pgp_reconstruction/dependencies *
