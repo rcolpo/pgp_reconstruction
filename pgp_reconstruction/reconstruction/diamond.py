@@ -1,80 +1,72 @@
 import pandas as pd
-from subprocess import call
 import os
+from subprocess import Popen, PIPE, STDOUT
 
-
-def load_diamond_results(filename, drop_unused_cols=True):
-    """ Load and parse an diamond results file.
-
-    Args:
-        filename (str): input file
-        drop_unused_cols (bool): remove columns not used for model carving (default: True)
-
-    Returns:
-        pandas.DataFrame: eggnog data
-
+def parse_diamond_output(filepath, remove_extra_columns=True):
     """
-    columns = ['query_gene', 'BiGG_gene', 'pident', 'length', 'mismatch', 'gapopen',
-               'qstart', 'qend', 'sstart', 'send', 'evalue', 'score']
+    Parses a diamond output file and loads it into a pandas DataFrame.
 
-    data = pd.read_csv(filename, sep='\t', names=columns)
-
-    if drop_unused_cols:
-        data = data[['query_gene', 'BiGG_gene', 'score']]
-
-    return data
-
-
-def run_blast(inputfile, input_type, outputfile, database, args=None, verbose=True):
-    """ Run blast aligment with Diamond.
-
-    Args:
-        inputfile (str): fasta input file
-        input_type (str): sequence type ('protein' or 'dna')
-        outputfile (str): output file name
-        database (str): path to diamond protein database file
-        args (str): additional arguments to be passed to diamond (optional)
-        verbose (bool): allow diamond output to stdout (default: True)
+    Parameters:
+    filepath (str): Path to the input file
+    remove_extra_columns (bool): If True, unnecessary columns are dropped from the DataFrame (default: True)
 
     Returns:
-        int: diamond exit code
+    pandas.DataFrame: DataFrame representing the parsed data
+    """
+    col_names = ['source_gene', 'target_gene', 'pident', 'alignment_length', 'mismatches', 'gap_opens',
+                 'query_start', 'query_end', 'sstart', 'send', 'e_value', 'score']
+
+    df = pd.read_csv(filepath, sep='\t', names=col_names)
+
+    if remove_extra_columns:
+        df = df[['source_gene', 'target_gene', 'score']]
+
+    return df
+
+
+def execute_diamond_blast(input_seq_file, seq_type, output_file, db_path, extra_args=None, show_output=True):
+    """
+    Executes a Diamond BLAST alignment.
+
+    Parameters:
+    input_seq_file (str): Path to the input sequence file in FASTA format
+    seq_type (str): Type of the sequence ('protein' or 'dna')
+    output_file (str): Path to the output file
+    db_path (str): Path to the diamond protein database file
+    extra_args (str): Additional command-line arguments for diamond (optional)
+    show_output (bool): If True, diamond's output is printed to stdout (default: True)
+
+    Returns:
+    int: The exit code from diamond
 
     Notes:
-        Default arguments are: --top 10 --more-sensitive
-
+    Default arguments are: --min-score 50 -k0
     """
 
-    assert (input_type in ['protein', 'dna']), "Input type must be either 'protein' or 'dna'"
+    assert seq_type in ['protein', 'dna'], "Sequence type must be 'protein' or 'dna'"
 
-    cmd = ['diamond']
+    command = ['diamond']
 
-    if input_type == 'protein':
-        cmd += ['blastp']
-    elif input_type == 'dna':
-        cmd += ['blastx']
+    if seq_type == 'protein':
+        command.append('blastp')
+    elif seq_type == 'dna':
+        command.append('blastx')
 
-    cmd += ['-d', database]
-    cmd += ['-q', inputfile]
-    cmd += ['-o', outputfile]
-    
-    cmd += ['-p', '4'] # number of threads
+    command.extend(['-d', db_path, '-q', input_seq_file, '-o', output_file, '-p', '4'])
 
-    if not args:
-        #args = "--sensitive --min-score 50 -k0"
-        args = "--min-score 50 -k0"
-    #    #args = "--more-sensitive --top 10"
+    if not extra_args:
+        extra_args = "--min-score 50 -k0"
 
-    cmd += args.split()
-    
-    print(' '.join(cmd))
+    command.extend(extra_args.split())
 
-    if verbose:
-        print(' '.join(cmd))
+    if show_output:
+        print(' '.join(command))
 
-    with open(os.devnull, 'w') as devnull:
+    with open(os.devnull, 'w') as null_file:
         try:
-            exit_code = call(cmd, stdout=devnull)
+            proc = Popen(command, stdout=null_file if not show_output else PIPE, stderr=STDOUT)
+            exit_status = proc.wait()
         except OSError:
-            exit_code = None
+            exit_status = None
 
-    return exit_code
+    return exit_status

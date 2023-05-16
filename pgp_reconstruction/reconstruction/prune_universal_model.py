@@ -49,7 +49,7 @@ def initSolver(reframedModel, positiveInObjective, constraintsFromFile, cobraMod
 		
 			for rxnCobra in model.reactions:
 			
-				if len(rxnCobra.compartments) == 2: continue
+				if len(rxnCobra.compartment) == 2: continue
 				if rxnCobra.id in boundaryIds: continue
 				if rxnCobra.genes: continue
 				if rxnCobra.lower_bound < 0: rxnCobra.lower_bound = -0.1
@@ -324,7 +324,7 @@ def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, r
 					for met in rxn.metabolites: 
 						if met.id == metId: sucesso = 1
 					if sucesso == 1: rxnsToInclude.add(rxn.id)
-				if len(rxn.compartments) == 2:
+				if len(rxn.compartment) == 2:
 					sucesso = 0
 					metsInRxn = {met.id for met in rxn.metabolites}
 					if metId in metsInRxn:
@@ -385,23 +385,6 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 				min_growth=0.1, min_atpm=0.1, eps=1e-3, bigM=1e3, default_score=-6.0,
 				soft_score=10.0, ref_score=0.0, solver=None, debug_output=None, rsink = None, minimumMedia=False):
 				
-				
-
-
-	""" Reconstruct a metabolic reframedModel using the reframedMe approach.
-
-	Args:
-		reframedModel (CBModel): universal reframedModel
-		reaction_scores (pandas.DataFrame): reaction rxnsScores
-		outputfile (str): write reframedModel to SBML file (optional)
-		flavor (str): SBML flavor ('cobra' or 'fbc2', optional)
-		default_score (float): penalty for non-annotated intracellular reactions (default: -1.0)
-		soft_score (float): score for soft constraints (default: 1.0)
-		init_env (Environment): initialize final reframedModel with given Environment (optional)
-
-	Returns:
-		CBModel: reconstructed reframedModel
-	"""
 		
 
 	pickle_file_path = os.path.join(project_dir, 'data/generated', 'spontaneousRedundant.pickle')
@@ -513,7 +496,7 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 		rxnCobra = cobraModel.reactions.get_by_id(idInreframed[2:].replace('__45__','-').replace('__46__','.').replace('__43__','+'))
 		
 		#define score for transport reactions
-		if len(rxnCobra.compartments) == 2:
+		if len(rxnCobra.compartment) == 2:
 			#makes easier for mets to leave the cell than to enter the cell
 			if '--' in rxnCobra.reaction: left_side, right_side = rxnCobra.reaction.split('--')
 			if '=' in rxnCobra.reaction: left_side, right_side = rxnCobra.reaction.split('=')

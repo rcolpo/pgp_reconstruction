@@ -186,7 +186,7 @@ def makeEssentialGenesEssential(solution1, bestPerReadSimplified, rheaIdToGene, 
 
 		#do not wich to minimize boundaries or transport
 		boundaries = set(rxn.id for rxn in cobraModel.boundary)
-		transport = set(rxn.id for rxn in cobraModel.reactions if len(rxn.compartments) == 2)
+		transport = set(rxn.id for rxn in cobraModel.reactions if len(rxn.compartment) == 2)
 		acidDissociation = set(rxn.id for rxn in cobraModel.reactions if 'acidDissociation' in rxn.id)
 
 		conter = 0

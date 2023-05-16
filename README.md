@@ -19,7 +19,7 @@ PGP_Reconstruction can be installed using pip:
 pip install pgp_reconstruction
 ```
 
-PGP_Reconstruction can automatically download and install some dependencies during the first time you run it, including: a slightly modified version of [MinPath](https://github.com/mgtools/MinPath) and some big databases, downloaded from a [Google Drive folder](https://drive.google.com/drive/u/1/folders/1hkgjXY9DCY49xz1WBiTjinHCgXpBVqWs). Prodigal, downloaded from [its official GitHub repository](https://github.com/hyattpd/Prodigal/releases).
+PGP_Reconstruction can automatically download and install some dependencies during the first time you run it, including: a slightly modified version of [MinPath](https://github.com/mgtools/MinPath) and some big databases, downloaded from a [external server](https://files.ufz.de/~umb-pgp_reconstruction-01/). Prodigal, downloaded from [its official GitHub repository](https://github.com/hyattpd/Prodigal/releases).
 
 However, PGP_Reconstruction can not install everything automatically, and you will need to install two external dependencies manually:
 - [Diamond](https://github.com/bbuchfink/diamond) (conda install -c bioconda diamond)

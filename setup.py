@@ -7,7 +7,7 @@ with open('README.md') as readme_file:
 # Setting up
 setup(
     name="pgp_reconstruction",
-    version='0.0.1',
+    version='0.0.2',
     author="rcolpo (Rodrigo Amarante Colpo)",
     author_email="<rodrigo.colpo-amarante@ufz.de>",
     description='Pathway-Guided Pruning Reconstruction of constraint-based metabolic models',

@@ -3,7 +3,7 @@ from pgp_reconstruction.reconstruction.findSoftConstraints import taxonomyBasedC
 from pgp_reconstruction.reconstruction.findOrfs import findOrfs
 from pgp_reconstruction.reconstruction.prune_universal_model import prune_model
 from pgp_reconstruction.reconstruction.scoring import reaction_scoring
-from pgp_reconstruction.reconstruction.diamond import run_blast, load_diamond_results
+from pgp_reconstruction.reconstruction.diamond import execute_diamond_blast, parse_diamond_output
 from pgp_reconstruction.cli.download_missing_data import download_missing_files
 from reframed import load_cbmodel
 from reframed.io.sbml import sanitize_id
@@ -19,7 +19,12 @@ import datetime
 import sys
 from multiprocessing import freeze_support
 
-def first_run_check():
+def first_run_check(updateDB):
+
+	if updateDB:
+		#it can be called even if not first call
+		firstRun = download_missing_files()
+		if firstRun: return firstRun
 
 	diamond_db = project_dir + config.get('generated', 'diamond_db')
 	if not os.path.exists(diamond_db):
@@ -31,15 +36,18 @@ def first_run_check():
 		print("Running diamond for the first time, please wait while we build the internal database...")
 		fasta_file = project_dir + config.get('generated', 'fasta_file')
 		cmd = ['diamond', 'makedb', '--in', fasta_file, '-d', diamond_db[:-5]]
+		cmdStr = ''
+		for i in cmd: cmdStr += i + ' ' 
+		
 		try:
 			exit_code = subprocess.call(cmd)
 		except OSError:
-			raise ValueError('Unable to run diamond with the command "' + cmd + '"\nMake sure diamond is installed and available in your PATH.')
+			raise ValueError('Unable to run diamond with the command "' + cmdStr + '"\nMake sure diamond is installed and available in your PATH.')
 		else:
 			if exit_code != 0:
 				raise ValueError('Failed to run diamond (wrong arguments).')
 				
-	return firstRun
+	return 0
 
 
 def loadConstraints(soft, constraintsFromFile, cobraModel, reframedModel, sufix=''):
@@ -231,8 +239,7 @@ def loadConstraints(soft, constraintsFromFile, cobraModel, reframedModel, sufix=
 							constraintsFromFile[direction][constraintType][rxn.id+ sufix] = constraintsDict['reactions'][constraintType][rxnId]['score']
 
 
-def maincall(inputFileName, outputfile=None, diamond_args=None,
-		 verbose=True, constraints=None, reference=None):
+def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, constraints=None, reference=None):
 
 	
 	if verbose: print('\nPreparing to reconstruct model. ' + str(datetime.datetime.now()) + '\n')
@@ -272,6 +279,8 @@ def maincall(inputFileName, outputfile=None, diamond_args=None,
 			pickle_file_path = os.path.join(project_dir, 'data/generated', 'reframedUniversalModel.pickle')
 			with open(pickle_file_path, 'rb') as f:
 				reframedModel = pickle.load(f)
+				
+			a = cobraModel.reactions[0].compartment
 		
 		except:
 			#try opening universal model directely from its .XML file
@@ -286,9 +295,16 @@ def maincall(inputFileName, outputfile=None, diamond_args=None,
 						if type(rxn.annotation[db]) == type(''):
 							rxn.annotation[db] = [rxn.annotation[db]]
 							
-			with open('c:/Users/colpoama/AppData/Local/Programs/Python/Python37/Lib/site-packages/pgp_reconstruction/data/generated/cobraUniversalModel.pickle', 'wb') as handle:
+			#replace rxn.compartments by rxn.compartment.
+			for rxn in cobraModel.reactions:
+				compartmentSet = set()
+				for met in rxn.metabolites:
+					compartmentSet.add(met.compartment)
+				rxn.compartment = list(compartmentSet)
+							
+			with open(os.path.join(project_dir, 'data/generated', 'cobraUniversalModel.pickle'), 'wb') as handle:
 				pickle.dump(cobraModel, handle, protocol=4)
-			with open('c:/Users/colpoama/AppData/Local/Programs/Python/Python37/Lib/site-packages/pgp_reconstruction/data/generated/reframedUniversalModel.pickle', 'wb') as handle:
+			with open(os.path.join(project_dir, 'data/generated', 'reframedUniversalModel.pickle'), 'wb') as handle:
 				pickle.dump(reframedModel, handle, protocol=4)
 						
 	except IOError:
@@ -306,18 +322,18 @@ def maincall(inputFileName, outputfile=None, diamond_args=None,
 	#se for DNA, roda prodigal para encontrar ORFs e traduzir as sequencias.
 	inputfileNew, geneAndProteinNamePerSeqId = findOrfs(inputFileName)
 
+	
+	#parse_diamond_output
 	filesList = os.listdir()
-
-
-	#load_diamond_results
 	if verbose: print('Running diamond...')
 	diamond_db = project_dir + config.get('generated', 'diamond_db')
 	
 	if model_id + '-Diamond.tsv' in filesList: blast_output = model_id + '-Diamond.tsv'
-	else: blast_output = model_id_formated + '-Diamond.tsv'
+	elif inputFileName + '-Diamond.tsv' in filesList: blast_output = inputFileName + '-Diamond.tsv'
+	else: blast_output = model_id + '-Diamond.tsv'
 	
 	if blast_output not in filesList or os.path.getsize(blast_output) == 0:
-		exit_code = run_blast(inputfileNew, 'protein', blast_output, diamond_db, diamond_args, verbose)
+		exit_code = execute_diamond_blast(inputfileNew, 'protein', blast_output, diamond_db, diamond_args, verbose)
 
 		if exit_code is None:
 			print('Unable to run diamond (make sure diamond is available in your PATH).')
@@ -329,7 +345,7 @@ def maincall(inputFileName, outputfile=None, diamond_args=None,
 				print('Incorrect diamond args? Please check documentation or use default args.')
 			return
 
-	diamondResult = load_diamond_results(blast_output)
+	diamondResult = parse_diamond_output(blast_output)
 	
 	rxnsScores, rheaIdToGene, rxnsCobraToreframedModel, soft_constraints_pathways, bestPerReadSimplified, softPositiveNewRxn, relevantRxnsPerGeneInModel = reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, reframedModel, uniprotToRheaRxns, soft_constraints, rxnsInSoftSyn, verbose)
 	
@@ -409,15 +425,18 @@ def main():
 	parser.add_argument('-v', '--verbose', action='store_true', dest='verbose', help="Switch to verbose mode")
 	parser.add_argument('--constraints', help="Constraints file")
 	parser.add_argument('--reference', help="Manually curated model of a close reference species.")
+	parser.add_argument('--updateDB', action='store_true', help="Will look for a more recent version of the databases used by the tool.")
 
 	args = parser.parse_args()
+	
+	
 		
 	
 	#check if diamond file exists on data folder
-	firstRun = first_run_check()
+	firstRun = first_run_check(args.updateDB)
 	
 	if firstRun:
-		print('\n########\nThis was pgp_reconstruction first run. Files were included. Please restart the application for normal usage. If the problem persists, manually download the missing files from:\n https://drive.google.com/drive/u/1/folders/1hkgjXY9DCY49xz1WBiTjinHCgXpBVqWs \n########\n')
+		print('\n########\nThis was pgp_reconstruction first run. Files were included. Please restart the application for normal usage. If the problem persists, manually download the missing files from:\n https://files.ufz.de/~umb-pgp_reconstruction-01/ \n########\n')
 		return
 
 	if len(args.input) > 1:

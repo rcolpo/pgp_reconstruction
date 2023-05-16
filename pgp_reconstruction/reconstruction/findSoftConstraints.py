@@ -211,7 +211,11 @@ def findSimilarSpec(specName):
 
 	taxonomicalLevelPerDb = {'Kegg': dict(), 'Biocyc': dict()}
 	
-	if taxo and os.path.exists(pickle_file_allSpecBioCyc) and os.path.exists(pickle_file_allSpecKegg):
+	if not taxo:
+		return taxonomicalLevelPerDb, list()
+	
+	
+	if os.path.exists(pickle_file_allSpecBioCyc) and os.path.exists(pickle_file_allSpecKegg):
 	
 		with open(pickle_file_allSpecBioCyc, 'rb') as f:
 			allSpecBioCyc = pickle.load(f)
@@ -247,8 +251,10 @@ def findSimilarSpec(specName):
 				taxo.reverse()
 				taxoOfTarget = taxo[:taxo.index(tax)+1]
 				break
-				
-	if 'cellular organisms' in taxoOfTarget: taxoOfTarget.remove('cellular organisms')
+		if 'cellular organisms' in taxoOfTarget: taxoOfTarget.remove('cellular organisms')
+	else:
+		if 'cellular organisms' in taxo: taxo.remove('cellular organisms')
+		taxoOfTarget = taxo
 				
 	return taxonomicalLevelPerDb, taxoOfTarget
 					
@@ -262,30 +268,35 @@ def taxonomyBasedConstraints(fileNameAndPath, cobraModel):
 	if fileNameAndPath == fileName: filePath = os.getcwd()
 	else: filePath = fileNameAndPath.replace(fileName,'')
 
-
-	pickle_file_path = os.path.join(project_dir, 'data/generated', 'allSpecBioCyc.pickle')
-	with open(pickle_file_path, 'rb') as f:
-		allSpecBioCyc = pickle.load(f)
-		
-	pickle_file_path = os.path.join(project_dir, 'data/generated', 'allSpecKegg.pickle')
-	with open(pickle_file_path, 'rb') as f:
-		allSpecKegg = pickle.load(f)
-		
-	pickle_file_path = os.path.join(project_dir, 'data/generated', 'biocycPathways.pickle')
-	with open(pickle_file_path, 'rb') as f:
-		biocycPathways = pickle.load(f)
-		
-
+	
+	rxnsInSoftSyn = set()
 	#organismNameKeggList, organismNameBiocycList, taxo = findSimilarSpec(specName) #{'Escherichia coli': {'Kegg': ['Escherichia coli ABU 83972 (2012)'], 'Biocyc': ['Escherichia coli K-12 substr.MG1655 (Tier 1) | 385 pathways; 1989 reactions']}}
 	taxonomicalLevelPerDb, taxoOfTarget = findSimilarSpec(specName) #{'Kegg': {'tetragenococcus': ['Tetragenococcus koreensis (2018)', 'Tetragenococcus halophilus YJ1 (2019)'}, 'Biocyc': {'tetragenococcus': ['Tetragenococcus solitarius NBRC 100494 (Tier 3) | 163 pathways; 766 reactions']}}
 	
-
 	dbToRheaRxns, dbToRheaMets, rheaWithSameSyn = findAllMetsAndRxnsTranslations(cobraModel)
+	
+	#check if 'allSpecBioCyc' exists. 
+	try:
+		pickle_file_path = os.path.join(project_dir, 'data/generated', 'allSpecBioCyc.pickle')
+		with open(pickle_file_path, 'rb') as f:
+			allSpecBioCyc = pickle.load(f)
+			
+		pickle_file_path = os.path.join(project_dir, 'data/generated', 'allSpecKegg.pickle')
+		with open(pickle_file_path, 'rb') as f:
+			allSpecKegg = pickle.load(f)
+			
+		pickle_file_path = os.path.join(project_dir, 'data/generated', 'biocycPathways.pickle')
+		with open(pickle_file_path, 'rb') as f:
+			biocycPathways = pickle.load(f)
+	except:
+		soft_constraints = {'kegg': {'lower than 0.5': set(), '0.5 to 0.59': set(), '0.6 to 0.69': set(), '0.7 to 0.79': set(), '0.8 to 0.89': set(), '0.9 to 0.99': set(), '1': set(), '1 intersection':set(),'pathways':set()}, 'metacyc': {'lower than 0.5': set(), '0.5 to 0.59': set(), '0.6 to 0.69': set(), '0.7 to 0.79': set(), '0.8 to 0.89': set(), '0.9 to 0.99': set(), '1 intersection':set(),'1':set(),'pathways':set()}, 'metacyc met': {'lower than 0.5': set(), '0.5 to 0.59': set(), '0.6 to 0.69': set(), '0.7 to 0.79': set(), '0.8 to 0.89': set(), '0.9 to 0.99': set(), '1 intersection':set(),'1':set(),'pathways':set()}, 'User constraint':{'To Include': set(), 'To avoid': set()}}
+		return soft_constraints, rxnsInSoftSyn, taxoOfTarget, rheaWithSameSyn
+		
+
 	
 	keggRxnsFreqSlots, pathwaysKegg = findKeggRxnsInReferenceOrgs(taxonomicalLevelPerDb, dbToRheaRxns, allSpecKegg)
 	
 	biocycRxnsFreqSlots, biocycMetsFreqSlots, pathwaysBiocyc = findBiocycRxnsInReferenceOrgs(taxonomicalLevelPerDb, dbToRheaRxns, dbToRheaMets, allSpecBioCyc, biocycPathways)
-
 
 	#organiza os resultados
 	keggRxnsFreqSlots['1 intersection'] = keggRxnsFreqSlots['1'].intersection(biocycRxnsFreqSlots['1'])
@@ -295,8 +306,8 @@ def taxonomyBasedConstraints(fileNameAndPath, cobraModel):
 	biocycRxnsFreqSlots['1'] = biocycRxnsFreqSlots['1'] - biocycRxnsFreqSlots['1 intersection']
 	biocycRxnsFreqSlots['pathways'] = pathwaysBiocyc
 	
+	
 	soft_constraints = {'kegg': keggRxnsFreqSlots, 'metacyc': biocycRxnsFreqSlots, 'metacyc met': biocycMetsFreqSlots, 'User constraint':{'To Include': set(), 'To avoid': set()}}
-
 	#salvando arquivo ara usar como constraint
 	softConstraintsTable = ''
 	for eachKey in soft_constraints:
@@ -316,7 +327,7 @@ def taxonomyBasedConstraints(fileNameAndPath, cobraModel):
 	
 	rxnsInSoft = soft_constraints['kegg']['1 intersection']|soft_constraints['kegg']['1']|soft_constraints['kegg']['0.9 to 0.99']|soft_constraints['kegg']['0.8 to 0.89']|soft_constraints['kegg']['0.7 to 0.79']|soft_constraints['kegg']['0.6 to 0.69']|soft_constraints['kegg']['0.5 to 0.59']|soft_constraints['metacyc']['1 intersection']|soft_constraints['metacyc']['1']|soft_constraints['metacyc']['0.9 to 0.99']|soft_constraints['metacyc']['0.8 to 0.89']|soft_constraints['metacyc']['0.7 to 0.79']|soft_constraints['metacyc']['0.6 to 0.69']|soft_constraints['metacyc']['0.5 to 0.59']
 	
-	rxnsInSoftSyn = set()
+	
 	for rxn in cobraModel.reactions:
 		if rxn.id.replace('_forwardTemp','').replace('_reverseTemp','').replace('_bidirectionalCopy','') in rxnsInSoft:
 			rxnsInSoftSyn.add(rxn.id.replace('_forwardTemp','').replace('_reverseTemp','').replace('_bidirectionalCopy',''))
