@@ -422,7 +422,7 @@ def main():
 
 	parser.add_argument('--diamond-args', help="Additional arguments for running diamond")
 	parser.add_argument('-o', '--output', dest='output', help="SBML output file (or output folder if -r is used)")
-	parser.add_argument('-v', '--verbose', action='store_true', dest='verbose', help="Switch to verbose mode")
+	parser.add_argument('-q', '--quiet', action='store_false', dest='verbose', help="Switch off the verbose mode")
 	parser.add_argument('--constraints', help="Constraints file")
 	parser.add_argument('--reference', help="Manually curated model of a close reference species.")
 	parser.add_argument('--updateDB', action='store_true', help="Will look for a more recent version of the databases used by the tool.")
@@ -436,7 +436,7 @@ def main():
 	firstRun = first_run_check(args.updateDB)
 	
 	if firstRun:
-		print('\n########\nThis was pgp_reconstruction first run. Files were included. Please restart the application for normal usage. If the problem persists, manually download the missing files from:\n https://files.ufz.de/~umb-pgp_reconstruction-01/ \n########\n')
+		print('\n########\nThis was pgp_reconstruction first run. Files were included. Please start the application again for normal usage. If you keep seeing this message, manually download the missing files from:\n https://files.ufz.de/~umb-pgp_reconstruction-01/ \n########\n')
 		return
 
 	if len(args.input) > 1:

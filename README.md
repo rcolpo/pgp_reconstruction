@@ -19,11 +19,27 @@ PGP_Reconstruction can be installed using pip:
 pip install pgp_reconstruction
 ```
 
-PGP_Reconstruction can automatically download and install some dependencies during the first time you run it, including: a slightly modified version of [MinPath](https://github.com/mgtools/MinPath) and some big databases, downloaded from a [external server](https://files.ufz.de/~umb-pgp_reconstruction-01/). Prodigal, downloaded from [its official GitHub repository](https://github.com/hyattpd/Prodigal/releases).
+PGP_Reconstruction automatically downloads and installs some dependencies during the first run, including: a slightly modified version of [MinPath](https://github.com/mgtools/MinPath), large databases from an [external server](https://files.ufz.de/~umb-pgp_reconstruction-01/), and Prodigal from [its official GitHub repository](https://github.com/hyattpd/Prodigal/releases).
 
-However, PGP_Reconstruction can not install everything automatically, and you will need to install two external dependencies manually:
-- [Diamond](https://github.com/bbuchfink/diamond) (conda install -c bioconda diamond)
+However, PGP_Reconstruction cannot install all dependencies automatically. You will need to install the following external dependencies manually:
+- [Diamond](https://github.com/bbuchfink/diamond) (use the command `conda install -c bioconda diamond`)
 - IBM [CPLEX](https://www.ibm.com/products/ilog-cplex-optimization-studio/cplex-optimizer) Optimizer
+
+## Troubleshooting
+
+**Issue:** After running PGP_Reconstruction, you encounter the error message `TypeError: solve() got an unexpected keyword argument 'emphasis'`.
+
+**Cause:** PGP_Reconstruction relies on the `reframed` Python library to formulate the optimization problem that CPLEX solves. The error indicates you might not have the most recent version of `reframed`.
+
+**Solution:** You will need to manually update your `reframed` library. Follow these steps:
+
+1. Visit the [reframed GitHub repository](https://github.com/cdanielmachado/reframed).
+2. Download the project files.
+3. Unzip the downloaded folder.
+4. Navigate into the unzipped directory.
+5. Install the library by running the command `pip install .` in your terminal.
+
+These steps will ensure you're working with the latest version of `reframed`.
 
 
 ## Usage
