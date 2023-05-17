@@ -25,7 +25,7 @@ However, PGP_Reconstruction cannot install all dependencies automatically. You w
 - [Diamond](https://github.com/bbuchfink/diamond) (use the command `conda install -c bioconda diamond`)
 - IBM [CPLEX](https://www.ibm.com/products/ilog-cplex-optimization-studio/cplex-optimizer) Optimizer
 
-## Troubleshooting
+### Troubleshooting
 
 **Issue:** After running PGP_Reconstruction, you encounter the error message `TypeError: solve() got an unexpected keyword argument 'emphasis'`.
 
