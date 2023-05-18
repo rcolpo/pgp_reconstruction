@@ -1,4 +1,4 @@
-# Example on how to use constraints and a reference model on PGP-Reconstruction
+# Inputs accepted and how to improve the quality of models
 
 This folder contains examples of genomic information that PGP-Reconstruction accepts as input files. Additionally, it provides an example of a `constraint.tsv` file for manually curating your model, and how to use a reference model.
 
