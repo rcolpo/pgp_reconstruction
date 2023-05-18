@@ -115,7 +115,7 @@ A more complex usage would be:
 pgprec Escherichia_coli.gbk --constraints constraints.txt --reference "Escherichia coli.xml"
 ```
 
-##Further developments
+## Further developments
 
 PGP-Reconstruction uses [KEGG Organisms](https://www.genome.jp/kegg/catalog/org_list.html) and [Ecocyc](https://biocyc.org/biocyc-pgdb-list.shtml) to identify the core metabolism of the modeled species. These databases, however, are available via subscription only and can not be made publicly available. PGP-Reconstruction can still work while skipping this step, but it leads to slightly lower-quality models. In future versions of this tool, we would like to develop a public database that can be used to replace KEGG and Ecocyc for this specific task.
 
