@@ -136,10 +136,11 @@ This project (Nr. 100386143) is co-financed by means of taxation based on the bu
 Developed by Rodrigo Amarante Colpo while working at the Helmholtz Centre for Environmental Research - UFZ.
 Supervisors: Sabine Kleinsteuber, Jens Olaf Krömer, Florian Centler, and Peter Florian Stadler.
 
+
 <p align="center">
-  <img src="ufzLogo.jpg" alt="UFZ Logo" width="35%">
-  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="25%">
-  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="25%">
+  <img src="ufzLogo.jpg" alt="UFZ Logo" width="37%">
+  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="24%">
+  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="24%">
 </p>
 
 
