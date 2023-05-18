@@ -137,8 +137,8 @@ Developed by Rodrigo Amarante Colpo while working at the Helmholtz Centre for En
 Supervisors: Sabine Kleinsteuber, Jens Olaf Krömer, Florian Centler, and Peter Florian Stadler.
 
 <p align="center">
-  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="33%">
-  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="33%">
-  <img src="ufzLogo.jpg" alt="UFZ Logo" width="33%">
+  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="30%">
+  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="30%">
+  <img src="ufzLogo.jpg" alt="UFZ Logo" width="30%">
 </p>
 
