@@ -8,7 +8,7 @@ Pathway-Guided Pruning Reconstruction (PGP-Reconstruction) is a Python tool for 
 - Reconstruct GEMs using a top-down approach (same as CarveMe and GapSeq)
 - Models are particularly relevant for microbiome simulations
 - Capable of representing a wide range of pathways
-- Almost zero blocked reactions
+- Reconstruct GEMs have almost zero blocked reactions
 - Usage of Rhea as a reaction database
 - Usage of Uniprot as a protein database
 - Accept several input formats, including annotation files
