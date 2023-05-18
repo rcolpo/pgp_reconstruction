@@ -133,11 +133,11 @@ If you encounter any issues or have any questions, please [open an issue](https:
 ## Credits
 
 This project (Nr. 100386143) is co-financed by means of taxation based on the budget adopted by the representatives of the Landtag of Saxony.
-Developed by Rodrigo Amarante Colpo while working at the Helmholtz Centre for Environmental Research - UFZ. 
+Developed by Rodrigo Amarante Colpo while working at the Helmholtz Centre for Environmental Research - UFZ.
 Supervisors: Sabine Kleinsteuber, Jens Olaf Krömer, Florian Centler, and Peter Florian Stadler.
 
 <p align="center">
-  <img src="ufzLogo.jpg" alt="UFZ Logo" width="30%">
+  <img src="ufzLogo.jpg" alt="UFZ Logo" width="35%">
   <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="25%">
   <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="25%">
 </p>
