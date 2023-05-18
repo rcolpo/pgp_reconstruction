@@ -1,0 +1,4 @@
+*.faa filter=lfs diff=lfs merge=lfs -text
+*.fna filter=lfs diff=lfs merge=lfs -text
+*.gbff filter=lfs diff=lfs merge=lfs -text
+*.xml filter=lfs diff=lfs merge=lfs -text

@@ -1,0 +1,7 @@
+#M_Metabolite/R_Reaction Id	constraint type	Score	Consumed/Produced
+M_h2o	Soft	5	Media
+M_na    Soft    1    Media
+R_R09640    Soft    0
+M_29105	Soft	5	Media
+M_48828	Soft	5	Media
+M_15379	Hard	1	Product
