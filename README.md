@@ -138,22 +138,10 @@ Supervisors: Sabine Kleinsteuber, Jens Olaf Krömer, Florian Centler, and Peter 
 
 <p align="center">
   <img src="ufzLogo.jpg" alt="UFZ Logo" width="30%">
-  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="20%">
-  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="20%">
+  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="25%">
+  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="25%">
 </p>
 
 
-<table>
-<tr>
-<td align="center" valign="middle">
-  <img src="ufzLogo.jpg" alt="UFZ Logo" width="30%">
-</td>
-<td align="center" valign="middle">
-  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="20%">
-</td>
-<td align="center" valign="middle">
-  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="20%">
-</td>
-</tr>
-</table>
+
 
