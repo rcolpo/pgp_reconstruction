@@ -128,8 +128,17 @@ PGP-Reconstruction is released under the [Apache Software License 2.0](https://w
 
 ## Support
 
-If you encounter any issues or have any questions, please [open an issue](https://github.com/rcolpo/pgp_reconstruction/issues) or reach out to the maintainers.
+If you encounter any issues or have any questions, please [open an issue](https://github.com/rcolpo/pgp_reconstruction/issues) or reach out to the [maintainer](https://github.com/rcolpo).
+
+## Credits
 
 This project (Nr. 100386143) is co-financed by means of taxation based on the budget adopted by the representatives of the Landtag of Saxony.
+Developed by Rodrigo Amarante Colpo while working at the Helmholtz Centre for Environmental Research - UFZ. 
+Supervisors: Sabine Kleinsteuber, Jens Olaf Krömer, Florian Centler, and Peter Florian Stadler.
 
-![Freistaat Sachsen Logo](Freistaat_sachsen_logo.jpg)
+<p align="center">
+  <img src="Freistaat_sachsen_logo.jpg" alt="Freistaat Sachsen Logo" width="33%">
+  <img src="leipzigUniLogo.jpg" alt="Leipzig Uni Logo" width="33%">
+  <img src="ufzLogo.jpg" alt="UFZ Logo" width="33%">
+</p>
+
