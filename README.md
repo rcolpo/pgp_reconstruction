@@ -138,7 +138,7 @@ This project (Nr. 100386143) is co-financed by means of taxation based on the bu
 
 Developed by Rodrigo Amarante Colpo while working at the Helmholtz Centre for Environmental Research - UFZ.
 
-Supervisors: [Sabine Kleinsteuber](https://www.ufz.de/index.php?en=39075), [Jens Olaf Krömer](https://www.ufz.de/index.php?en=42453), Florian Centler(https://www.uni-siegen.de/lwf/departments/digitalegesundheitswissenschaften/professuren/bioinformatik/team/), and [Peter Florian Stadler](http://www.bioinf.uni-leipzig.de/~studla/index.html).
+Supervisors: [Sabine Kleinsteuber](https://www.ufz.de/index.php?en=39075), [Jens Olaf Krömer](https://www.ufz.de/index.php?en=42453), [Florian Centler](https://www.uni-siegen.de/lwf/departments/digitalegesundheitswissenschaften/professuren/bioinformatik/team/), and [Peter Florian Stadler](http://www.bioinf.uni-leipzig.de/~studla/index.html).
 
 
 <p align="center">
