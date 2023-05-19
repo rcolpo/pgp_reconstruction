@@ -53,7 +53,7 @@ Preliminary tests show that `PGP-Reconstruction` generates draft metabolic model
 
 ## Comparison with Other Alternative Tools
 
-We adapted the table from [Mendoza et al. (2019)](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1856-1) to include `PGP-Rec`, as shown below:
+We adapted the table from [Mendoza et al. (2019)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6685185/) to include `PGP-Rec`, as shown below:
 
 ![Systematic assessment of current genome-scale metabolic reconstruction tools](table.jpg)
 
