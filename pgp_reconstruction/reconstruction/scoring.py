@@ -1,299 +1,298 @@
-if 1:
-	import pickle
-	from pgp_reconstruction import project_dir
-	from statistics import median
-	import sys
-	import os
-	from datetime import datetime
-	from pgp_reconstruction.cli.util import saveProgressFile
+import pickle
+from pgp_reconstruction import project_dir
+from statistics import median
+import sys
+import os
+from datetime import datetime
+from pgp_reconstruction.cli.util import saveProgressFile
 
-	try:from pgp_reconstruction.dependencies.MinPath_master.MinPath import MinPathMain
-	except: pass
-	
-	
-	def useReferenceModelData(reference, cobraModel, rxnsScores):
-		#include in rxnsScores reactions from reference model
-		if reference:
-			try:
-				cobraModelReference = cobra.io.read_sbml_model(reference)
-				
-				for cobraObject in [cobraModelReference.reactions, cobraModelReference.metabolites]:
-					for rxn in cobraObject:
-						for db in rxn.annotation:
-							if type(rxn.annotation[db]) == type(''):
-								rxn.annotation[db] = [rxn.annotation[db]]
-				
-			except IOError:
-				raise IOError(f'Failed to load reference model')
-			
-			rxnWithGenes = set()
-			rxnBoundary = set()
-			rxnWithoutGenes = set()
-			
-			for rxn in cobraModelReference.reactions:
+try:from pgp_reconstruction.dependencies.MinPath_master.MinPath import MinPathMain
+except: pass
 
-				if rxn.genes:
-					for db in rxn.annotation:
-						for synId in rxn.annotation[db]: rxnWithGenes.add(synId)
-					rxnWithGenes.add(rxn.id)
-						
-				elif rxn in cobraModelReference.boundary:
-					for db in rxn.annotation:
-						for synId in rxn.annotation[db]: rxnBoundary.add(synId)
-					rxnBoundary.add(rxn.id)
 
-				else:
+def useReferenceModelData(reference, cobraModel, rxnsScores):
+	#include in rxnsScores reactions from reference model
+	if reference:
+		try:
+			cobraModelReference = cobra.io.read_sbml_model(reference)
+			
+			for cobraObject in [cobraModelReference.reactions, cobraModelReference.metabolites]:
+				for rxn in cobraObject:
 					for db in rxn.annotation:
-						for synId in rxn.annotation[db]: rxnWithoutGenes.add(synId)
-					rxnWithoutGenes.add(rxn.id)
-						
-			rxnsFromReference = {'rxnWithGenes':rxnWithGenes, 'rxnBoundary':rxnBoundary, 'rxnWithoutGenes':rxnWithoutGenes}
+						if type(rxn.annotation[db]) == type(''):
+							rxn.annotation[db] = [rxn.annotation[db]]
 			
-			
-			#use rxnsFromReference to increase scores
-			for rxn in cobraModel.reactions:
-				idInreframed = 'R_'+rxn.id.replace('-','__45__').replace('.','__46__').replace('+','__43__')
+		except IOError:
+			raise IOError(f'Failed to load reference model')
+		
+		rxnWithGenes = set()
+		rxnBoundary = set()
+		rxnWithoutGenes = set()
+		
+		for rxn in cobraModelReference.reactions:
+
+			if rxn.genes:
 				for db in rxn.annotation:
-				
-					if rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db]):
-						if idInreframed not in rxnsScores or rxnsScores[idInreframed] < 0.1: 
-							print(rxn.id + ' ' + str(rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db])))
-							rxnsScores[idInreframed] = 0.1
-						
-					if rxnsFromReference['rxnWithoutGenes'].intersection(rxn.annotation[db]):
-						if rxnsScores[idInreframed] < -0.1: 
-							rxnsScores[idInreframed] = -0.1
-
-	def findPrioritary(top50Simplified, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 1):
-		#first check if there is any match from rxnsInTaxonomyConstraints
-		filtered1 = list()
-		
-		#try to find the missing subunits
-		if not filtered1 and firstloop == 1 and subunits:
-
-			for eachDict in top50Simplified:
-				if 'subunit' not in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title'] and 'component' not in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']:
-					sucesso = 0
-					for eachDict in top50Simplified:
-						subunitType = ''
-						for subunitString in ['subunit', 'component']:
-							if subunitString in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']:
-								#to extract the subunit part
-								if subunitString in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']:
-								
-									titleProvisional = swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']
-								
-									if titleProvisional.count(subunitString) > 1: 
-										titleProvisional = titleProvisional.replace(subunitString,'',1)
-								
-									if '-'+subunitString in titleProvisional.lower():
-										for word in titleProvisional.lower().split(' '):
-											if '-'+subunitString in word: break
-										subunitType = word.replace('-'+subunitString,'')
-									else:
-									
-										if '/'+subunitString in titleProvisional.lower():
-											toReplace = titleProvisional.lower().split('/'+subunitString)[0]
-											titleProvisional = titleProvisional.replace(toReplace.split(' ')[-1]+'/','')
-										
-										if subunitString+' ' in titleProvisional.lower():
-											subunitType = titleProvisional.lower().split(subunitString+' ')[1]
-											subunitType = subunitType.split(' ')[0]
-										elif ' '+subunitString in titleProvisional.lower():
-											subunitType = titleProvisional.lower().split(' '+subunitString)[0]
-											subunitType = subunitType.split(' ')[-1]
-						
-						if subunitType:
-							for subunit in subunits:
-								if subunit['rxns'].intersection(eachDict['rxns']) and subunit['gene'] != eachDict['gene'] and subunit['subunit'] != subunitType:
-									categoriesCount['subunits'] += 1
-									filtered1.append(eachDict)
-		
-
-		if not filtered1 and firstloop == 1:
-			for eachDict in top50Simplified:
-				if eachDict['rxns'].intersection(rxnsFromUniprot):
-					categoriesCount['rxnsFromUniprot'] += 1
-					filtered1.append(eachDict)
-		
-		if not filtered1 and firstloop == 1:
-			for eachDict in top50Simplified:
-				if eachDict['rxns'].intersection(rxnsInTaxonomyConstraints):
-					categoriesCount['fromMinPath'] += 1
-					filtered1.append(eachDict)
+					for synId in rxn.annotation[db]: rxnWithGenes.add(synId)
+				rxnWithGenes.add(rxn.id)
 					
-		maxScore = 0
+			elif rxn in cobraModelReference.boundary:
+				for db in rxn.annotation:
+					for synId in rxn.annotation[db]: rxnBoundary.add(synId)
+				rxnBoundary.add(rxn.id)
+
+			else:
+				for db in rxn.annotation:
+					for synId in rxn.annotation[db]: rxnWithoutGenes.add(synId)
+				rxnWithoutGenes.add(rxn.id)
+					
+		rxnsFromReference = {'rxnWithGenes':rxnWithGenes, 'rxnBoundary':rxnBoundary, 'rxnWithoutGenes':rxnWithoutGenes}
+		
+		
+		#use rxnsFromReference to increase scores
+		for rxn in cobraModel.reactions:
+			idInreframed = 'R_'+rxn.id.replace('-','__45__').replace('.','__46__').replace('+','__43__')
+			for db in rxn.annotation:
+			
+				if rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db]):
+					if idInreframed not in rxnsScores or rxnsScores[idInreframed] < 0.1: 
+						print(rxn.id + ' ' + str(rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db])))
+						rxnsScores[idInreframed] = 0.1
+					
+				if rxnsFromReference['rxnWithoutGenes'].intersection(rxn.annotation[db]):
+					if rxnsScores[idInreframed] < -0.1: 
+						rxnsScores[idInreframed] = -0.1
+
+def findPrioritary(top50Simplified, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 1):
+	#first check if there is any match from rxnsInTaxonomyConstraints
+	filtered1 = list()
+	
+	#try to find the missing subunits
+	if not filtered1 and firstloop == 1 and subunits:
+
 		for eachDict in top50Simplified:
-			if eachDict['score'] >= maxScore: maxScore = eachDict['score']
-
-		if not filtered1 and firstloop == 1:
-			for eachDict in top50Simplified:
-				if eachDict['score'] >=  maxScore*0.7 and eachDict['score']*0.7 > 100:
-					if eachDict['rxns'].intersection(rxnsInPathsNaive):
-						categoriesCount['fromNaivePaths'] += 1
-						filtered1.append(eachDict)
-					
-		if not filtered1:
-			for eachDict in top50Simplified:
-				if eachDict['score'] >=  maxScore*0.8 and eachDict['score']*0.8 > 100:
-					if eachDict['rxns'].intersection(rxnsInPathsFromSoft):
-						categoriesCount['fromSoftConstraints'] += 1
-						filtered1.append(eachDict)
-		
-		if not filtered1:
-			#give priority to genes selected on annotatetion file
-			for eachDict in top50Simplified:
-				if eachDict['source_gene'] in geneAndProteinNamePerSeqId and geneAndProteinNamePerSeqId[eachDict['source_gene']]['gene'] and geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 1'] and (geneAndProteinNamePerSeqId[eachDict['source_gene']]['gene'].lower() == swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['gene'].lower() or swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title'].lower() in geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 1'].lower()):
-					categoriesCount['fromAnotation'] += 1
-					filtered1.append(eachDict)
-				elif eachDict['source_gene'] in geneAndProteinNamePerSeqId and geneAndProteinNamePerSeqId[eachDict['source_gene']]['gene'] and geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 2'] and (swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title'].lower() in geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 2'].lower()):
-					categoriesCount['fromAnotation'] += 1
-					filtered1.append(eachDict)
-			if filtered1 == top50Simplified: filtered1 = list()
-			
-			
-			#give priority to swissProtIds
-			if not filtered1:
+			if 'subunit' not in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title'] and 'component' not in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']:
+				sucesso = 0
 				for eachDict in top50Simplified:
-					if eachDict['uniprotEntry'] in swissProtIds:
-						filtered1.append(eachDict)
-						categoriesCount['fromSwissProtIds'] += 1
+					subunitType = ''
+					for subunitString in ['subunit', 'component']:
+						if subunitString in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']:
+							#to extract the subunit part
+							if subunitString in swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']:
+							
+								titleProvisional = swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title']
+							
+								if titleProvisional.count(subunitString) > 1: 
+									titleProvisional = titleProvisional.replace(subunitString,'',1)
+							
+								if '-'+subunitString in titleProvisional.lower():
+									for word in titleProvisional.lower().split(' '):
+										if '-'+subunitString in word: break
+									subunitType = word.replace('-'+subunitString,'')
+								else:
+								
+									if '/'+subunitString in titleProvisional.lower():
+										toReplace = titleProvisional.lower().split('/'+subunitString)[0]
+										titleProvisional = titleProvisional.replace(toReplace.split(' ')[-1]+'/','')
+									
+									if subunitString+' ' in titleProvisional.lower():
+										subunitType = titleProvisional.lower().split(subunitString+' ')[1]
+										subunitType = subunitType.split(' ')[0]
+									elif ' '+subunitString in titleProvisional.lower():
+										subunitType = titleProvisional.lower().split(' '+subunitString)[0]
+										subunitType = subunitType.split(' ')[-1]
 					
-		if not filtered1: filtered1 = top50Simplified
-		
-		return filtered1
+					if subunitType:
+						for subunit in subunits:
+							if subunit['rxns'].intersection(eachDict['rxns']) and subunit['gene'] != eachDict['gene'] and subunit['subunit'] != subunitType:
+								categoriesCount['subunits'] += 1
+								filtered1.append(eachDict)
+	
 
-
-	def findBestPerRead(top60, swissProtIds, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, swiss90tremble50SeqInfo, geneAndProteinNamePerSeqId, categoriesCount):
-			
-		#find me maximum score to cut out set of reactions < 0.5*maxScore
-		maxScore = max([i['score'] for i in top60])
-				
-		top50Simplified = list()
-		for eachDict in top60:
-			if eachDict['score'] >= maxScore*0.5:
-				top50Simplified.append(eachDict)
-			
-			
-		#da prioridade ao match com maior intersecao com reacoes anotadas pelo biocyc/kegg, quando ha dois matchs, e os dois tem scores proximos
-		filteredByPriority = findPrioritary(top50Simplified, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 1)
-		while True:
-			filteredByPriority2 = findPrioritary(filteredByPriority, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 0)
-			if filteredByPriority2 == filteredByPriority: break
-			filteredByPriority = filteredByPriority2
-		
-		maximumScore = 0
-		maximumScoreIndex = 0
-		for count, eachList in enumerate(filteredByPriority):
-			if eachList['score'] > maximumScore:
-				maximumScore = eachList['score']
-				maximumScoreIndex = count
-
-		#separate in two lists without intersection
-		bestMatch = top50Simplified[maximumScoreIndex]
-		del top50Simplified[maximumScoreIndex]
-		
-		notBestMatch = list()
+	if not filtered1 and firstloop == 1:
 		for eachDict in top50Simplified:
-			if not eachDict['rxns'].issubset(bestMatch['rxns']):
-				notBestMatch.append(eachDict)
+			if eachDict['rxns'].intersection(rxnsFromUniprot):
+				categoriesCount['rxnsFromUniprot'] += 1
+				filtered1.append(eachDict)
+	
+	if not filtered1 and firstloop == 1:
+		for eachDict in top50Simplified:
+			if eachDict['rxns'].intersection(rxnsInTaxonomyConstraints):
+				categoriesCount['fromMinPath'] += 1
+				filtered1.append(eachDict)
 				
-		return bestMatch, notBestMatch
+	maxScore = 0
+	for eachDict in top50Simplified:
+		if eachDict['score'] >= maxScore: maxScore = eachDict['score']
+
+	if not filtered1 and firstloop == 1:
+		for eachDict in top50Simplified:
+			if eachDict['score'] >=  maxScore*0.7 and eachDict['score']*0.7 > 100:
+				if eachDict['rxns'].intersection(rxnsInPathsNaive):
+					categoriesCount['fromNaivePaths'] += 1
+					filtered1.append(eachDict)
+				
+	if not filtered1:
+		for eachDict in top50Simplified:
+			if eachDict['score'] >=  maxScore*0.8 and eachDict['score']*0.8 > 100:
+				if eachDict['rxns'].intersection(rxnsInPathsFromSoft):
+					categoriesCount['fromSoftConstraints'] += 1
+					filtered1.append(eachDict)
+	
+	if not filtered1:
+		#give priority to genes selected on annotatetion file
+		for eachDict in top50Simplified:
+			if eachDict['source_gene'] in geneAndProteinNamePerSeqId and geneAndProteinNamePerSeqId[eachDict['source_gene']]['gene'] and geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 1'] and (geneAndProteinNamePerSeqId[eachDict['source_gene']]['gene'].lower() == swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['gene'].lower() or swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title'].lower() in geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 1'].lower()):
+				categoriesCount['fromAnotation'] += 1
+				filtered1.append(eachDict)
+			elif eachDict['source_gene'] in geneAndProteinNamePerSeqId and geneAndProteinNamePerSeqId[eachDict['source_gene']]['gene'] and geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 2'] and (swiss90tremble50SeqInfo[eachDict['uniprotEntry']]['title'].lower() in geneAndProteinNamePerSeqId[eachDict['source_gene']]['protein name 2'].lower()):
+				categoriesCount['fromAnotation'] += 1
+				filtered1.append(eachDict)
+		if filtered1 == top50Simplified: filtered1 = list()
+		
+		
+		#give priority to swissProtIds
+		if not filtered1:
+			for eachDict in top50Simplified:
+				if eachDict['uniprotEntry'] in swissProtIds:
+					filtered1.append(eachDict)
+					categoriesCount['fromSwissProtIds'] += 1
+				
+	if not filtered1: filtered1 = top50Simplified
+	
+	return filtered1
+
+
+def findBestPerRead(top60, swissProtIds, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, swiss90tremble50SeqInfo, geneAndProteinNamePerSeqId, categoriesCount):
+		
+	#find me maximum score to cut out set of reactions < 0.5*maxScore
+	maxScore = max([i['score'] for i in top60])
 			
-	def changeScoreOfSoft(synId, rxnsScores, reframedModel, dbToCobraId, score):
-
-		if synId not in dbToCobraId: return
-		for rxnCobraId in dbToCobraId[synId]:
-			rxnReframedId = 'R_'+rxnCobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-			if rxnReframedId in reframedModel.reactions:	
-				if rxnReframedId not in rxnsScores: 
-					rxnsScores[rxnReframedId] = score
-				else:
-					if rxnsScores[rxnReframedId] < score: rxnsScores[rxnReframedId] = score
-					elif rxnsScores[rxnReframedId] < 0 and rxnsScores[rxnReframedId] < -0.2: rxnsScores[rxnReframedId] += 0.1
+	top50Simplified = list()
+	for eachDict in top60:
+		if eachDict['score'] >= maxScore*0.5:
+			top50Simplified.append(eachDict)
 		
 		
-	def findPathways(metacycRxnsInModel, pathwaysToInclude=set()):
+	#da prioridade ao match com maior intersecao com reacoes anotadas pelo biocyc/kegg, quando ha dois matchs, e os dois tem scores proximos
+	filteredByPriority = findPrioritary(top50Simplified, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 1)
+	while True:
+		filteredByPriority2 = findPrioritary(filteredByPriority, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 0)
+		if filteredByPriority2 == filteredByPriority: break
+		filteredByPriority = filteredByPriority2
+	
+	maximumScore = 0
+	maximumScoreIndex = 0
+	for count, eachList in enumerate(filteredByPriority):
+		if eachList['score'] > maximumScore:
+			maximumScore = eachList['score']
+			maximumScoreIndex = count
 
-		pickle_file_path = os.path.join(project_dir, 'data/generated', 'biocycPathways.pickle')
-		with open(pickle_file_path, 'rb') as f:
-			biocycPathways = pickle.load(f)
+	#separate in two lists without intersection
+	bestMatch = top50Simplified[maximumScoreIndex]
+	del top50Simplified[maximumScoreIndex]
+	
+	notBestMatch = list()
+	for eachDict in top50Simplified:
+		if not eachDict['rxns'].issubset(bestMatch['rxns']):
+			notBestMatch.append(eachDict)
 			
-		pickle_file_path = os.path.join(project_dir, 'data/generated', 'rxnsPerModules.pickle')
-		with open(pickle_file_path, 'rb') as f:
-			rxnsPerModules = pickle.load(f)
-
-		paraEscrever = ""
-		contador = 1
-		for eachRxn in metacycRxnsInModel:
-			paraEscrever += "read" + str(contador) + "	" + eachRxn + "\n"
-			contador += 1
-		paraEscrever = paraEscrever[:-1]
-		humannRxns = open('biocycRxnsInModel.tsv', 'w')
-		_ = humannRxns.write(paraEscrever)
-		humannRxns.close()
+	return bestMatch, notBestMatch
 		
-		#creating file to be used as a mapping by the MinPath
-		superPath = set()
-		toWrite = "#Metacyc pathway and reactions mapping file\n#Pathway	ReactionID"
-		for eachPath in biocycPathways:
-			if pathwaysToInclude and eachPath not in pathwaysToInclude: continue
-			if 'superpathway' in biocycPathways[eachPath]['name'].lower(): 
-				superPath.add(eachPath)
-				continue
-			if len(biocycPathways[eachPath]['RxnsInvolved']) < 3: continue
+def changeScoreOfSoft(synId, rxnsScores, reframedModel, dbToCobraId, score):
+
+	if synId not in dbToCobraId: return
+	for rxnCobraId in dbToCobraId[synId]:
+		rxnReframedId = 'R_'+rxnCobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
+		if rxnReframedId in reframedModel.reactions:	
+			if rxnReframedId not in rxnsScores: 
+				rxnsScores[rxnReframedId] = score
+			else:
+				if rxnsScores[rxnReframedId] < score: rxnsScores[rxnReframedId] = score
+				elif rxnsScores[rxnReframedId] < 0 and rxnsScores[rxnReframedId] < -0.2: rxnsScores[rxnReframedId] += 0.1
+	
+	
+def findPathways(metacycRxnsInModel, pathwaysToInclude=set()):
+
+	pickle_file_path = os.path.join(project_dir, 'data/generated', 'biocycPathways.pickle')
+	with open(pickle_file_path, 'rb') as f:
+		biocycPathways = pickle.load(f)
+		
+	pickle_file_path = os.path.join(project_dir, 'data/generated', 'rxnsPerModules.pickle')
+	with open(pickle_file_path, 'rb') as f:
+		rxnsPerModules = pickle.load(f)
+
+	paraEscrever = ""
+	contador = 1
+	for eachRxn in metacycRxnsInModel:
+		paraEscrever += "read" + str(contador) + "	" + eachRxn + "\n"
+		contador += 1
+	paraEscrever = paraEscrever[:-1]
+	humannRxns = open('biocycRxnsInModel.tsv', 'w')
+	_ = humannRxns.write(paraEscrever)
+	humannRxns.close()
+	
+	#creating file to be used as a mapping by the MinPath
+	superPath = set()
+	toWrite = "#Metacyc pathway and reactions mapping file\n#Pathway	ReactionID"
+	for eachPath in biocycPathways:
+		if pathwaysToInclude and eachPath not in pathwaysToInclude: continue
+		if 'superpathway' in biocycPathways[eachPath]['name'].lower(): 
+			superPath.add(eachPath)
+			continue
+		if len(biocycPathways[eachPath]['RxnsInvolved']) < 3: continue
+		for eachRxn in biocycPathways[eachPath]['RxnsInvolved']:
+			toWrite += "\n" + eachPath + '	' + eachRxn
+	
+	for eachPath in rxnsPerModules:
+		if pathwaysToInclude and eachPath not in pathwaysToInclude: continue
+		for eachRxn in rxnsPerModules[eachPath]:
+			toWrite += "\n" + eachPath + '	' + eachRxn
+	
+	mapping = open('metcycRxnPathwayMap.tsv', 'w')
+	_ = mapping.write(toWrite)
+	mapping.close()
+	
+	#find the minimum set of pathways thta explains the reactions
+	MinPathResult1 = MinPathMain(anyfile = 'biocycRxnsInModel.tsv', mapfile = 'metcycRxnPathwayMap.tsv')
+	
+	#find the minimum set of pathways thta explains the reactions, including superpathways
+	toWrite = "#Metacyc pathway and reactions mapping file\n#Pathway	ReactionID"
+	for eachPath in biocycPathways:
+		if pathwaysToInclude and eachPath not in pathwaysToInclude: continue
+		if eachPath in superPath or eachPath in MinPathResult1:
 			for eachRxn in biocycPathways[eachPath]['RxnsInvolved']:
 				toWrite += "\n" + eachPath + '	' + eachRxn
-		
-		for eachPath in rxnsPerModules:
-			if pathwaysToInclude and eachPath not in pathwaysToInclude: continue
-			for eachRxn in rxnsPerModules[eachPath]:
-				toWrite += "\n" + eachPath + '	' + eachRxn
-		
-		mapping = open('metcycRxnPathwayMap.tsv', 'w')
-		_ = mapping.write(toWrite)
-		mapping.close()
-		
-		#find the minimum set of pathways thta explains the reactions
-		MinPathResult1 = MinPathMain(anyfile = 'biocycRxnsInModel.tsv', mapfile = 'metcycRxnPathwayMap.tsv')
-		
-		#find the minimum set of pathways thta explains the reactions, including superpathways
-		toWrite = "#Metacyc pathway and reactions mapping file\n#Pathway	ReactionID"
-		for eachPath in biocycPathways:
-			if pathwaysToInclude and eachPath not in pathwaysToInclude: continue
-			if eachPath in superPath or eachPath in MinPathResult1:
-				for eachRxn in biocycPathways[eachPath]['RxnsInvolved']:
-					toWrite += "\n" + eachPath + '	' + eachRxn
-		
-		mapping = open('metcycRxnPathwayMap.tsv', 'w')
-		_ = mapping.write(toWrite)
-		mapping.close()
-		
-		MinPathResult2 = MinPathMain(anyfile = 'biocycRxnsInModel.tsv', mapfile = 'metcycRxnPathwayMap.tsv')
-		
-		minPathResult = MinPathResult1|MinPathResult2
-		
-		return minPathResult
+	
+	mapping = open('metcycRxnPathwayMap.tsv', 'w')
+	_ = mapping.write(toWrite)
+	mapping.close()
+	
+	MinPathResult2 = MinPathMain(anyfile = 'biocycRxnsInModel.tsv', mapfile = 'metcycRxnPathwayMap.tsv')
+	
+	minPathResult = MinPathResult1|MinPathResult2
+	
+	return minPathResult
 
-	def rheaToIdInModel(cobraModel):
+def rheaToIdInModel(cobraModel):
 
-		dbToCobraId = dict()
-		for cobraRxn in cobraModel.reactions: 
-			if 'rhea' in cobraRxn.annotation:
-				for rheaId in cobraRxn.annotation['rhea']:
-					if rheaId not in dbToCobraId: dbToCobraId[int(rheaId)] = list()
-					dbToCobraId[int(rheaId)].append(cobraRxn.id)
-			else:		
-				if 'kegg' in cobraRxn.annotation:
-					for keggId in cobraRxn.annotation['kegg']:
-						if keggId not in dbToCobraId: dbToCobraId[keggId] = list()
-						dbToCobraId[keggId].append(cobraRxn.id)
-				if 'metacyc' in cobraRxn.annotation:
-					for metacycId in cobraRxn.annotation['metacyc']:
-						if metacycId not in dbToCobraId: dbToCobraId[metacycId] = list()
-						dbToCobraId[metacycId].append(cobraRxn.id)
-				
-		return dbToCobraId
+	dbToCobraId = dict()
+	for cobraRxn in cobraModel.reactions: 
+		if 'rhea' in cobraRxn.annotation:
+			for rheaId in cobraRxn.annotation['rhea']:
+				if rheaId not in dbToCobraId: dbToCobraId[int(rheaId)] = list()
+				dbToCobraId[int(rheaId)].append(cobraRxn.id)
+		else:		
+			if 'kegg' in cobraRxn.annotation:
+				for keggId in cobraRxn.annotation['kegg']:
+					if keggId not in dbToCobraId: dbToCobraId[keggId] = list()
+					dbToCobraId[keggId].append(cobraRxn.id)
+			if 'metacyc' in cobraRxn.annotation:
+				for metacycId in cobraRxn.annotation['metacyc']:
+					if metacycId not in dbToCobraId: dbToCobraId[metacycId] = list()
+					dbToCobraId[metacycId].append(cobraRxn.id)
+			
+	return dbToCobraId
 
 
 	
