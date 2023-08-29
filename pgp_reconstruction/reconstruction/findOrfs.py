@@ -124,7 +124,7 @@ def findOrfs(inputFileName):
 	#identifica se eh DNA ou proteina. Se for DNA, identifica ORFS e traduz para proteina.
 	
 	#check if file is from genbank. if genbank, create fasta file for alingment
-	if inputFileName.endswith('.gb') or inputFileName.endswith('.gbk') or inputFileName.endswith('.genbank'):
+	if inputFileName.endswith('.gb') or inputFileName.endswith('.gbk') or inputFileName.endswith('.genbank') or inputFileName.endswith('.gbff'):
 		inputFileName = writeFasta(inputFileName)
 	
 	dnaLetters = {'A', 'C', 'T', 'G', 'N'}

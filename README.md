@@ -13,9 +13,19 @@ Pathway-Guided Pruning Reconstruction (PGP-Reconstruction) is a Python tool for 
 - Usage of Uniprot as a protein database
 - Accept several input formats, including annotation files
 
-## Short algorithm description
+## Algorithm overview
 
-The tool takes the organism's genome and species name as input, using the latter for taxonomic classification and core metabolism identification. It uses the genome to predict expressed reactions and pathways in the organism. In the universal model, reactions receive scores derived from the alignment score: reactions associated with aligned gene sequences in UniRef90 receive positive scores, whereas negative scores are assigned otherwise. The universal model is then "pruned" by maximizing the sum of reaction scores while ensuring network connectivity and biomass flux. 
+1) If the DNA sequence is used as input, ORFs are identifed and translated using Prodigal.
+2) Proteins of the target organism are aligned with those from UniRef90.
+3) To each reaction in the universal model, a score is assigned based on the alignment score and the organism's taxonomy.
+4) Reactions with negative scores are potentially adjusted if they belong to pathways where nearly all reactions have positive scores.
+5) A subset of the universal model that maximizes the total reaction scores while maintaining network connectivity and biomass formation is identified.
+6) Based on experimental gene essentiality data, reactions likely included erroneously are identified and removed from the model.
+7) Considering the completeness level of pathways in the model, reactions associated with promiscuous enzymes that don't contribute to nearly complete pathways are removed. At least one reaction from each promiscuous enzyme is retained.
+8) An optimization similar to step 5 is performed while making negative the score of the rections identified in steps  6 and 7.
+9) When relevant, passive diffusion reactions and spontaneous reactions are integrated into the model.
+
+Incorporating passive diffusion reactions in step 9 renders PGP-Reconstruction especially useful for microbiome simulations. This feature enables metabolite transportation outside the cell via passive diffusion, even if this process does not contribute to its own metabolism.
 
 ### Input
 
@@ -32,7 +42,7 @@ Additional information can be provided to PGP-Reconstruction, which will improve
 
 ### Output
 
-The primary output of PGP-Reconstruction is a draft metabolic model of the desired organism. This model is presented as an SBML (Systems Biology Markup Language) file, which can be read and manipulated using various systems biology and bioinformatics tools. The model includes a comprehensive list of predicted reactions, growth media, and pathways.
+The primary output of PGP-Reconstruction is a draft metabolic model of the desired organism. This model is presented as an SBML (Systems Biology Markup Language) file, which can be read and manipulated using various systems biology and bioinformatics tools. The model includes a comprehensive list of predicted reactions, growth media, and pathways. The model is compatible with FBA simulations.
 
 The quality of the output model depends on the completeness of the input genome, how well annotated it is, and the effort put into creating the "Constraints" file.
 
@@ -58,6 +68,7 @@ We adapted the table from [Mendoza et al. (2019)](https://www.ncbi.nlm.nih.gov/p
 ![Systematic assessment of current genome-scale metabolic reconstruction tools](table.jpg)
 
 Notes about the PGP-Rec classification on the table:
+- **Able to reconstruct eukaryotes**: `PGP-Reconstruction` makes no distinction between internal cellular compartments. The only compartments that exit are the cytosol the and external cellular espace.
 - **Fast**: `PGP-Reconstruction` is faster than GapSeq but slower than CarveMe and ModelSEED/KBase. Reconstructing a single model takes between 25-50 minutes on a standard modern computer (tests were performed on a Lenovo ThinkPad T490 notebook, with an Intel Core i5-8365U processor and 40GB of RAM).
 - **Open-source**: while `PGP-Reconstruction` is open source, it relies on CPLEX, which is a commercial solver free for students and academics. Optionally, it can receive as input data from Ecocyc and KEGG Organisms, which are subscription-only databases.
 - **Completeness of model fields**:  models reconstructed by`PGP-Reconstruction` will have included in their SBML file information about which pathways each reaction belongs to.

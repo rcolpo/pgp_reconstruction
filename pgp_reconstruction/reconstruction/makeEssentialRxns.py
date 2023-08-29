@@ -5,63 +5,10 @@ import os
 
 from reframed.solvers.solution import Status
 from pgp_reconstruction import project_dir
-	
-	
-def includeGenesRules(cobraModel, rheaIdToGene, uniprotToRheaRxns):
-
-	#para uma solucao da otimizacao
-	##adiciona informacao de genes
-	rxnsAndGenes = dict()
-	for rxn in cobraModel.reactions:
-		
-		for eachDict in rheaIdToGene['bestPerReadSimplified']:
-			if 'R_' + rxn.id in eachDict['rxns']:
-				if rxn.id not in rxnsAndGenes:
-					rxnsAndGenes[rxn.id] = set()
-				rxnsAndGenes[rxn.id].add(eachDict['gene'])
-				
-		if rxn.id not in rxnsAndGenes:
-			bestMatch = dict()
-			for eachDict in rheaIdToGene['notBestPerRead']:
-				if 'R_' + rxn.id in eachDict['rxns']:
-					if round(eachDict['score'],3) not in bestMatch:
-						bestMatch[round(eachDict['score'],3)] = set()
-					bestMatch[round(eachDict['score'],3)].add(eachDict['gene'])
-			if bestMatch:
-				rxnsAndGenes[rxn.id] = bestMatch[max(bestMatch)]
-	
-
-	for rxnId in rxnsAndGenes:
-		ruleString = '('
-		for uniprotId in rxnsAndGenes[rxnId]:
-			ruleString += uniprotId + ' or '
-		ruleString = ruleString[:-4] + ')'
-		cobraModel.reactions.get_by_id(rxnId).gene_reaction_rule = ruleString
-		
-		
-	genesToRxns = dict()
-	for rxnId in rxnsAndGenes:
-		for gene in rxnsAndGenes[rxnId]:
-			if gene not in genesToRxns: genesToRxns[gene] = list()
-			genesToRxns[gene].append(rxnId)
-	
-
-	essentialRxns_Teoretical = set()
-	for rxnId in rxnsAndGenes:
-		essentialRxns_Teoretical.add(cobraModel.reactions.get_by_id(rxnId))
-		
-	essentialRxnsIds_Teoretical = set()
-	for rxnId in rxnsAndGenes:
-		essentialRxnsIds_Teoretical.add(rxnId)
-	
-	return genesToRxns, essentialRxns_Teoretical, essentialRxnsIds_Teoretical
-	
-	
 
 
-
-def findEssencialGenes(bestPerReadSimplified, reframedModel):
-	#findEssencialGenes(bestPerReadSimplified, cobraModel)
+def findEssencialGenes(bestMatchPerRead, reframedModel):
+	#findEssencialGenes(bestMatchPerRead, cobraModel)
 
 	specGenAndFreq = dict()
 
@@ -93,7 +40,7 @@ def findEssencialGenes(bestPerReadSimplified, reframedModel):
 
 	essentialRxnsInSpec = set()
 	essentialGenesInSpec = set()
-	for dictInList in bestPerReadSimplified:
+	for dictInList in bestMatchPerRead:
 		if dictInList['gene'].lower() in essentialGenes:
 			essentialGenesInSpec.add(dictInList['gene'].lower())
 			for rxnId in dictInList['rxns']:
@@ -113,28 +60,31 @@ def remove_high_outliers(data):
 
 
 
-def makeEssentialGenesEssential(solution1, bestPerReadSimplified, rheaIdToGene, uniprotToRheaRxns, cobraModel, reframedModel, relevantRxnsPerGeneInModel):
-	
+def makeEssentialGenesEssential(solution1, bestMatchPerRead, rheaIdToGene, cobraModel, reframedModel, singleRxnsInGenes):
+	from pgp_reconstruction.reconstruction.prune_universal_model import includeGenesRules
 
 	deleted = []
 	if solution1.status == Status.OPTIMAL:
 
 
-		genesToRxns, essentialRxns_Teoretical, essentialRxnsIds_Teoretical = includeGenesRules(cobraModel, rheaIdToGene, uniprotToRheaRxns)
-		essentialGenesInSpec = findEssencialGenes(bestPerReadSimplified, cobraModel)
+		genesToRxns, essentialRxnsIds_Teoretical = includeGenesRules(cobraModel, rheaIdToGene)
+		essentialGenesInSpec = findEssencialGenes(bestMatchPerRead, cobraModel)
 		
 		rxnsInSol1 = set()
+		rxnsInSol1ReframendIds = set()
 		for rxnId in reframedModel.reactions:
 			if ('yr_' + rxnId in solution1.values and solution1.values['yr_' + rxnId] > 0) or ('yf_' + rxnId in solution1.values and solution1.values['yf_' + rxnId] > 0) or (abs(solution1.values[rxnId]) > 0):
-				#cobraRxn = rxnId[2:].replace('__45__','-').replace('__46__','.').replace('__43__','+').replace('_forwardTemp','').replace('_reverseTemp','')
+				rxnsInSol1ReframendIds.add(rxnId)
 				cobraRxn = rxnId[2:].replace('__45__','-').replace('__46__','.').replace('__43__','+')
 				rxnsInSol1.add(cobraRxn)
-				rxnsInSol1.add(cobraRxn.replace('_forwardTemp','_reverseTemp'))
-				rxnsInSol1.add(cobraRxn.replace('_reverseTemp','_forwardTemp'))
+				if '_forwardTemp' in cobraRxn: rxnsInSol1.add(cobraRxn.replace('_forwardTemp','_reverseTemp'))
+				if '_reverseTemp' in cobraRxn: rxnsInSol1.add(cobraRxn.replace('_reverseTemp','_forwardTemp'))
+				
 				
 		rxnsWithGoodEvidence = set()		
-		for i in relevantRxnsPerGeneInModel:
+		for rxnId in singleRxnsInGenes.intersection(rxnsInSol1ReframendIds):
 			rxnsWithGoodEvidence.add(rxnId[2:].replace('__45__','-').replace('__46__','.').replace('__43__','+'))
+		
 		
 
 		##Create smaller model, to speedUp process
@@ -246,7 +196,7 @@ def makeEssentialGenesEssential(solution1, bestPerReadSimplified, rheaIdToGene, 
 					
 					potentialToDel = set()
 					for rxn in cobraModel2.reactions:
-						if rxn.id in fbanterior.fluxes and (fbanterior.fluxes[rxn.id] > 0): potentialToDel.add(rxn.id)
+						if rxn.id in fbanterior.fluxes and abs(fbanterior.fluxes[rxn.id] > 0): potentialToDel.add(rxn.id)
 					
 					toRemove = set()
 					singleDeletion = cobra.flux_analysis.single_reaction_deletion(cobraModel2, potentialToDel - (essentialRxnsIds_Teoretical|rxnsWithGoodEvidence|essentialRxns|boundaries|transport|acidDissociation), processes=1)
@@ -353,5 +303,11 @@ def makeEssentialGenesEssential(solution1, bestPerReadSimplified, rheaIdToGene, 
 			deleted += toDelete
 			cobraModel2.remove_reactions(toDelete)
 			
+	fba_solution  = cobraModel2.optimize()
+	pfba_solution = cobra.flux_analysis.pfba(cobraModel2, fraction_of_optimum=0.1)
+	rxnFromSolutionWithFlux = set()
+	for rxn in cobraModel2.reactions:
+		if rxn.id in pfba_solution.fluxes and abs(pfba_solution.fluxes[rxn.id] > 0): rxnFromSolutionWithFlux.add(rxn.id)
+			
 	print('deleted = ' + str(deleted))
-	return deleted
+	return deleted, rxnFromSolutionWithFlux

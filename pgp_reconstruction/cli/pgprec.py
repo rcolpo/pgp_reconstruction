@@ -1,253 +1,279 @@
-from pgp_reconstruction import config, project_dir
-from pgp_reconstruction.reconstruction.findSoftConstraints import taxonomyBasedConstraints
-from pgp_reconstruction.reconstruction.findOrfs import findOrfs
-from pgp_reconstruction.reconstruction.prune_universal_model import prune_model
-from pgp_reconstruction.reconstruction.scoring import reaction_scoring
-from pgp_reconstruction.reconstruction.diamond import execute_diamond_blast, parse_diamond_output
-from pgp_reconstruction.cli.download_missing_data import download_missing_files
-from reframed import load_cbmodel
-from reframed.io.sbml import sanitize_id
-import argparse
-import cobra
-import os
-import os.path
-from multiprocessing import Pool
-from glob import glob
-import subprocess
-import pickle
-import datetime
-import sys
-from multiprocessing import freeze_support
+if 1:
+	from pgp_reconstruction import config, project_dir
+	from pgp_reconstruction.reconstruction.findSoftConstraints import taxonomyBasedConstraints
+	from pgp_reconstruction.reconstruction.findOrfs import findOrfs
+	from pgp_reconstruction.reconstruction.prune_universal_model import prune_model
+	from pgp_reconstruction.reconstruction.scoring import reaction_scoring
+	from pgp_reconstruction.reconstruction.scoring import useReferenceModelData
+	from pgp_reconstruction.reconstruction.diamond import execute_diamond_blast, parse_diamond_output
+	from pgp_reconstruction.cli.download_missing_data import download_missing_files
+	from pgp_reconstruction.cli.util import saveProgressFile
+	from reframed import load_cbmodel
+	import argparse
+	import cobra
+	import os
+	import os.path
+	import subprocess
+	import pickle
+	from datetime import datetime
+	import sys
+	from multiprocessing import freeze_support
 
-def first_run_check(updateDB):
+	def first_run_check(updateDB):
 
-	if updateDB:
-		#it can be called even if not first call
-		firstRun = download_missing_files()
-		if firstRun: return firstRun
+		if updateDB:
+			#it can be called even if not first call
+			firstRun = download_missing_files()
+			if firstRun: return firstRun
 
-	diamond_db = project_dir + config.get('generated', 'diamond_db')
-	if not os.path.exists(diamond_db):
-	
-		#only tries to connect to internet to download files while diamond_db is not found
-		firstRun = download_missing_files()
-		if firstRun: return firstRun
-	
-		print("Running diamond for the first time, please wait while we build the internal database...")
-		fasta_file = project_dir + config.get('generated', 'fasta_file')
-		cmd = ['diamond', 'makedb', '--in', fasta_file, '-d', diamond_db[:-5]]
-		cmdStr = ''
-		for i in cmd: cmdStr += i + ' ' 
+		diamond_db = project_dir + config.get('generated', 'diamond_db')
+		if not os.path.exists(diamond_db):
 		
-		try:
-			exit_code = subprocess.call(cmd)
-		except OSError:
-			raise ValueError('Unable to run diamond with the command "' + cmdStr + '"\nMake sure diamond is installed and available in your PATH.')
-		else:
-			if exit_code != 0:
-				raise ValueError('Failed to run diamond (wrong arguments).')
-				
-	return 0
-
-
-def loadConstraints(soft, constraintsFromFile, cobraModel, reframedModel, sufix=''):
-	#receive a file with ID of reactions and metabolites. IDs might be from ChEBI, KEGG, BIGG, SEED or Rhea. 
-	#finds IDs in universal model, and asign a score
-	
-	#create copy of annotation with ID lower case 
-	cobraModelRxns = dict()
-	for rxn in cobraModel.reactions:
-		cobraModelRxns[rxn.id.lower()] = dict()
-		for db in rxn.annotation:
-			cobraModelRxns[rxn.id.lower()][db] = set()
-			for annotationId in rxn.annotation[db]:
-				cobraModelRxns[rxn.id.lower()][db].add(annotationId.lower())
-	
-	#create copy of annotation with ID lower case 
-	cobraModelMets = dict()
-	for met in cobraModel.metabolites:
-		cobraModelMets[met.id.lower()] = dict()
-		for db in met.annotation:
-			cobraModelMets[met.id.lower()][db] = set()
-			for annotationId in met.annotation[db]:
-				cobraModelMets[met.id.lower()][db].add(annotationId.lower())		
-	
-	#constraintsFromFile = {'soft':dict(),'hard':dict()}
-	constraintsDict = {'metabolites':{'soft':dict(),'hard':dict()}, 'reactions':{'soft':dict(),'hard':dict()}}
-	with open(soft) as file:
-		for line in file:
-			line = line.strip()
-			if not line: continue
-			lineSplit = line.lower().split('\t')
-			#error handling
-			if len(lineSplit) != 4 and len(lineSplit) != 3:
-				sys.exit('ERROR: Constraint regarding metabolites should have 4 columns, separated by tabs. For example: "M_na    Soft    1    Media". Constraint regarding reactions should have 3 columns, separated by tabs. For example: "R_R09640    Soft    3".')
-			if len(lineSplit[0]) <= 2:
-				sys.exit('ERROR: First column should contain the IDs of reactions or metabolites. If reaction, it should start with "R_"; If metabolite, it should start with "M_". We accept IDs from BIGG, SEED and ChEBI. For example: "M_na".\nInput given: ' + str(line))
-			if lineSplit[0][:2] == 'm_':
-				if len(lineSplit) != 4:
-					sys.exit('ERROR: Constraint regarding metabolites should have 4 columns, separated by tabs. For example: "M_na    Soft    1    Media".\nInput given: ' + str(line))
-				if lineSplit[3] != 'media' and lineSplit[3] != 'product':
-					sys.exit('ERROR: It should be informed if the constraint is regarding the consuption (using keyword "Media") or production (using keyword "Product"). For example: "M_na    Soft    1    Media".\nInput given: ' + str(line))
-			if lineSplit[0][:2] == 'r_' and len(lineSplit) != 3:
-				sys.exit('ERROR: Constraint regarding reactions should have 3 columns, separated by tabs. For example: "R_R09640    Soft    3".\nInput given: ' + str(line))
-			if lineSplit[1] != 'soft' and lineSplit[1] != 'hard':
-				sys.exit('ERROR: In the second columns, it should be informed is the constraint is "soft" (model will try to satisfy the condition) or "hard" (model will necessarely satisfy the condition). For example: "R_R09640    Soft    3".\nInput given: ' + str(line))
-			#checking if score is number
-			try: a = float(lineSplit[2])
-			except: sys.exit('ERROR: In the third column it should be informed the reaction score in the optimization problem. If metabolite, the score will be atributed to the reactions producing the metabolite. If hard constraint, only the score sign will be taken into consideration. For example: "R_R09640    Soft    3".\nInput given: ' + str(line))
+			#only tries to connect to internet to download files while diamond_db is not found
+			firstRun = download_missing_files()
+			if firstRun: return firstRun
+		
+			print("Running diamond for the first time, please wait while we build the internal database...")
+			fasta_file = project_dir + config.get('generated', 'fasta_file')
+			cmd = ['diamond', 'makedb', '--in', fasta_file, '-d', diamond_db[:-5]]
+			cmdStr = ''
+			for i in cmd: cmdStr += i + ' ' 
 			
+			try:
+				exit_code = subprocess.call(cmd)
+			except OSError:
+				raise ValueError('Unable to run diamond with the command "' + cmdStr + '"\nMake sure diamond is installed and available in your PATH.')
+			else:
+				if exit_code != 0:
+					raise ValueError('Failed to run diamond (wrong arguments).')
+					
+		return 0
+
+
+	def loadConstraints(constraintsFilePath, cobraModel, reframedModel):
+		#receive a file with ID of reactions and metabolites. IDs might be from ChEBI, KEGG, BIGG, SEED or Rhea. 
+		#finds IDs in universal model, and asign a score
+		
+
+		pickle_file_path = os.path.join(project_dir, 'data/generated', 'keggModules.pickle')
+		with open(pickle_file_path, 'rb') as f:
+			keggModules = pickle.load(f)
+			
+		pickle_file_path = os.path.join(project_dir, 'data/generated', 'biocycPathways.pickle')
+		with open(pickle_file_path, 'rb') as f:
+			biocycPathways = pickle.load(f)
+			
+		allPaths = set()
+		for i in keggModules: allPaths.add(i.lower())
+		for i in biocycPathways: allPaths.add(i.lower())
+			
+			
+		constraintsDict = {'metabolites':{'soft':dict(),'hard':dict()}, 'reactions':{'soft':dict(),'hard':dict()}, 'pathways':{'soft':dict(),'hard':dict()}}
+		with open(constraintsFilePath) as file:
+			_ = next(file)  # Skip the first line
+			for line in file:
+				line = line.strip()
+				if not line: continue
+				lineSplit = line.split('\t')
+				#error handling
+				if len(lineSplit) != 4:
+					sys.exit('ERROR: Constraint should have 4 columns, separated by tabs. For example: "M_na    Soft    1    Media".\nInput given: ' + str(line))
+				if lineSplit[3] == 'taxonomy': continue
 				
-			#store data
-			if lineSplit[0][:2] == 'm_':
-				if lineSplit[1] == 'soft': constraintsDict['metabolites']['soft'][lineSplit[0][2:]] = {'score':float(lineSplit[2]), 'mediaOrProduct': lineSplit[3]}
-				elif lineSplit[1] == 'hard': constraintsDict['metabolites']['hard'][lineSplit[0][2:]] = {'score':float(lineSplit[2]), 'mediaOrProduct': lineSplit[3]}
-			elif lineSplit[0][:2] == 'r_':
-				if lineSplit[1] == 'soft': constraintsDict['reactions']['soft'][lineSplit[0][2:]] = {'score':float(lineSplit[2])}
-				elif lineSplit[1] == 'hard': constraintsDict['reactions']['hard'][lineSplit[0][2:]] = {'score':float(lineSplit[2])}
-	
-	
-	
-	##for mets
-	#remove container from met ID and create a dict with the original ID. 
-	constraintsMets = dict()
-	for constraintType in constraintsDict['metabolites']:
-		for metId in constraintsDict['metabolites'][constraintType]:
-			if metId[-2:] == '_e' or metId[-2:] == '_c': metId2 = metId[2:-2]
-			else: metId2 = metId
-			constraintsMets[metId2] = metId
-	
-	sink = dict()
-	exchange = dict()
-	changeBound = set()
-	#identify reactions producing (for media) and consuming (for product) the metabolite.
-	for metId2 in constraintsMets:
+				itemId = lineSplit[0]
+				constraintType = lineSplit[1].lower()
+				itemScore = lineSplit[2]
+				group = lineSplit[3].lower()
+				
+				
+				if len(itemId) <= 2:
+					sys.exit('ERROR: The first column should contain the IDs of reactions or metabolites. If reaction, it should start with "R_"; If metabolite, it should start with "M_". We accept IDs from BIGG, SEED, and ChEBI. For example: "M_na".\nInput given: ' + str(line))
+				if itemId[:2].lower() == 'm_':
+					if group != 'media' and group != 'product':
+						sys.exit('ERROR: It should be informed whether the constraint is regarding consumption (using the keyword "Media") or production (using the keyword "Product"). For example: "M_na    Soft    1    Media".\nInput given: ' + str(line))
+				if group == 'media' or group == 'product':
+					if itemId[:2].lower() != 'm_':
+						sys.exit('ERROR: the ID on the first column does not match the format of a metabolite ID, but in the last column you informed it is a consumed/produced metabolite. Metabolite IDs should start with "M_". Example of correct input: "M_61988_e    Soft    0.1    Media".\nInput given: ' + str(line))
+				if itemId[:2].lower() == 'r_':
+					if group != 'reaction':
+						sys.exit('ERROR: the id on the first column seems to be of a reaction, but this is not the information given in the last column. Example of correct input: "R_R09640    Soft    3    Reaction".\nInput given: ' + str(line))
+				if group[:2] == 'reaction':
+					if itemId[:2].lower() != 'r_':
+						sys.exit('ERROR: the ID on the first column does not match the format of a reaction ID, but in the last column you informed it is a reaction. Reactions IDs should start with "R_". Example of correct input: "R_R09640    Soft    3    Reaction".\nInput given: ' + str(line))
+				if group == 'pathway':
+					if itemId.lower() not in allPaths:
+						sys.exit('ERROR: pathway ID was not recognized either as a MetaCyc pathway or as a KEGG module.\nInput given: ' + str(line))
+				if constraintType != 'soft' and constraintType != 'hard':
+					sys.exit('ERROR: In the second column, it should be informed if the constraint is "soft" (model will try to satisfy the condition) or "hard" (model will necessarely satisfy the condition). For example: "R_R09640    Soft    3    Reaction".\nInput given: ' + str(line))
+				#checking if score is number
+				try: _ = float(itemScore)
+				except: sys.exit('ERROR: In the third column, it should be informed the reaction score. If metabolite, the score will be attributed to the reactions producing/consuming the metabolite. If hard constraint, only the score sign will be taken into consideration to decide if the reaction should be included or avoided. For example: "R_R09640    Soft    3    Reaction".\nInput given: ' + str(line))
+				
+				
+				
+				#store data
+				if itemId[:2] == 'm_':
+					if constraintType == 'soft': 
+						if itemId[2:] in constraintsDict['metabolites']['soft'] and group != constraintsDict['metabolites']['soft'][itemId[2:]][mediaOrProduct]:
+							constraintsDict['metabolites']['soft'][itemId[2:]][mediaOrProduct] = 'media and product'
+						else:
+							constraintsDict['metabolites']['soft'][itemId[2:]] = {'score':float(itemScore), 'mediaOrProduct': group}
+					elif constraintType == 'hard': 
+						constraintsDict['metabolites']['hard'][itemId[2:]] = {'score':float(itemScore), 'mediaOrProduct': group}
+				
+				elif itemId[:2] == 'r_':
+					if constraintType == 'soft': constraintsDict['reactions']['soft'][itemId[2:]] = {'score':float(itemScore)}
+					elif constraintType == 'hard': constraintsDict['reactions']['hard'][itemId[2:]] = {'score':float(itemScore)}
+				
+				elif group == 'pathway':
+					if constraintType == 'soft': constraintsDict['pathways']['soft'][itemId.lower()] = {'score':float(itemScore)}
+					elif constraintType == 'hard': constraintsDict['pathways']['hard'][itemId.lower()] = {'score':float(itemScore)}
 		
-		if constraintsMets[metId2] + '_e' in cobraModel.metabolites:
-			met = cobraModel.metabolites.get_by_id(constraintsMets[metId2] + '_e')
-			toIterate = [met]
-		elif constraintsMets[metId2] + '_c' in cobraModel.metabolites:
-			met = cobraModel.metabolites.get_by_id(constraintsMets[metId2] + '_c')
-			toIterate = [met]
-		else:
-			toIterate = cobraModel.metabolites
-	
-		for met in toIterate:
-			for db in ['bigg', 'chebi', 'kegg', 'seed']:
-				#if db in met.annotation and metId in met.annotation[db]:
-				if db in cobraModelMets[met.id.lower()] and metId2 in cobraModelMets[met.id.lower()][db]:
-					
-					for rxn in met.reactions:
-					
-						#if met.compartment != 'e' and not rxn.id.startswith('SK'): continue
-					
-						if len(rxn.metabolites) == 1:
-						
-							if met.compartment == 'c' and rxn.id.startswith('SK'):
-								if met.id[:-2] not in sink: sink[met.id[:-2]] = set()
-								sink[met.id[:-2]].add(rxn.id+sufix)
-							else:
-								if met.id[:-2] not in exchange: exchange[met.id[:-2]] = set()
-								exchange[met.id[:-2]].add(rxn.id+sufix)
-						
-							if met in rxn.products:
-								for constraintType in ['soft', 'hard']:
-									if constraintsMets[metId2] in constraintsDict['metabolites'][constraintType]:
-										if rxn.upper_bound > 0 and constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'media': 
-											constraintsFromFile['forward'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-										if rxn.lower_bound < 0 and constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'product': 
-											constraintsFromFile['reverse'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-										if met.compartment == 'c' and rxn.id.startswith('SK'):
-											if constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'media': 
-												if rxn.upper_bound <= 0: changeBound.add(rxn.id)
-												else: constraintsFromFile['forward'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-											if constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'product':
-												if rxn.lower_bound >= 0: changeBound.add(rxn.id)
-												else: constraintsFromFile['reverse'][constraintType][rxn.id+sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-											
-							elif met in rxn.reactants: 
-								for constraintType in ['soft', 'hard']:
-									if constraintsMets[metId2] in constraintsDict['metabolites'][constraintType]:
-										if rxn.lower_bound < 0 and constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'media': 
-											constraintsFromFile['reverse'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-										if rxn.upper_bound > 0 and constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'product':
-											
-											constraintsFromFile['forward'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-										if met.compartment == 'c' and rxn.id.startswith('SK'):
-											if constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'media': 
-												if rxn.lower_bound >= 0: 
-													if constraintType == 'hard' and constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score'] < 0: continue # it is asking to do something that the model alreday can not do
-													changeBound.add(rxn.id)
-												else: constraintsFromFile['reverse'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
-											if constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['mediaOrProduct'] == 'product':
-												if rxn.upper_bound <= 0: 
-													if constraintType == 'hard' and constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score'] < 0: continue # it is asking to do something that the model alreday can not do
-													changeBound.add(rxn.id)
-												else: constraintsFromFile['forward'][constraintType][rxn.id+ sufix] = constraintsDict['metabolites'][constraintType][constraintsMets[metId2]]['score']
+		
 
-	for direction in ['forward', 'reverse']:
-		#remove sink option if there is exchange
-		for metId in sink:
-			if metId in exchange:
-				for rxnId in sink[metId]:
-					if rxnId in constraintsFromFile[direction]['soft']: 
-						del constraintsFromFile[direction]['soft'][rxnId]
-						changeBound.discard(rxnId)
-					if rxnId in constraintsFromFile[direction]['hard']: 
-						del constraintsFromFile[direction]['hard'][rxnId]
-						changeBound.discard(rxnId)
+		#find the exchange reactions producing or consuming the metabolite
+		constraintsFromFile = {'soft':dict(),'hard':dict()}
+		for constraintType in constraintsDict['metabolites']:
+			for metId in constraintsDict['metabolites'][constraintType]:
+				metInModel = None
+				mediaOrProduct = constraintsDict['metabolites'][constraintType][metId]['mediaOrProduct']
+				score = constraintsDict['metabolites'][constraintType][metId]['score']
+				if metId in cobraModel.metabolites:
+					metInModel = cobraModel.metabolites.get_by_id(metId)
+				else:
+					sucess = 0
+					for met in cobraModel.metabolites:
+						for db in ['bigg', 'chebi', 'kegg', 'seed']:
+							if db not in met.annotation: continue
+							if metId in met.annotation[db] or metId + '_e' in met.annotation[db]:
+								sucess = 1
+								break
+						if sucess == 1: break
+					if sucess == 1: metInModel = met
+				
+				if not metInModel: continue
+				
+				for rxn in metInModel.reactions:
+					if len(rxn.metabolites) != 1: continue
 					
-
-	#change sink rxns bounds if necessary, to make it with go to the direction asked in the constraint
-	for cobraId in changeBound:
-		reframedId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-		rxn = cobraModel.reactions.get_by_id(cobraId)
-		if rxn.lower_bound == 0:
-			rxn.lower_bound = -1000
-			rxn.upper_bound = 0
-			reframedModel.reactions[reframedId].lb = -1000
-			reframedModel.reactions[reframedId].ub = 0
-		else:
-			rxn.lower_bound = 0
-			rxn.upper_bound = 1000
-			reframedModel.reactions[reframedId].lb = 0
-			reframedModel.reactions[reframedId].ub = 1000
-						
-	##for reactions
-	for direction in ['forward', 'reverse']:
-		constraintsDictForAnnotation = {'soft':set(),'hard':set()}
-		for constraintType in ['soft', 'hard']:
+					sucess = 0
+					if mediaOrProduct == 'product' and ((rxn.lower_bound < 0 and rxn.metabolites[metInModel] > 0) or (rxn.upper_bound > 0 and rxn.metabolites[metInModel] < 0)): #producing
+						constraintsFromFile[constraintType][rxn.id] = score
+						sucess = 1
+					
+					if mediaOrProduct == 'media' and ((rxn.upper_bound > 0 and rxn.metabolites[metInModel] > 0) or (rxn.lower_bound < 0 and rxn.metabolites[metInModel] < 0)): #producing
+						constraintsFromFile[constraintType][rxn.id] = score
+						sucess = 1
+				
+					#if there are no constraints for both directions, makes the oposite direction imposible
+					if sucess == 1 and constraintsDict['metabolites'][constraintType][metId]['mediaOrProduct'] != 'media and product':
+					
+						rxnReverse = None
+						if 'forwardTemp' in rxn.id:
+							rxnId = rxn.id.replace('forwardTemp', 'reverseTemp')
+							if rxnId in cobraModel.reactions:
+								rxnReverse = cobraModel.reactions.get_by_id(rxnId)
+						if 'reverseTemp' in rxn.id:
+							rxnId = rxn.id.replace('reverseTemp', 'forwardTemp')
+							if rxnId in cobraModel.reactions:
+								rxnReverse = cobraModel.reactions.get_by_id(rxnId)
+						if rxnReverse:
+							rxnReverse.lower_bound = 0
+							rxnReverse.upper_bound = 0
+							reframedId = 'R_'+rxnReverse.id.replace('-','__45__').replace('.','__46__').replace('+','__43__')
+							reframedModel.reactions[reframedId].lb = 0
+							reframedModel.reactions[reframedId].ub = 0
+		
+		
+		#faz o mesmo para as reacoes
+		for constraintType in constraintsDict['reactions']:
 			for rxnId in constraintsDict['reactions'][constraintType]:
-				sucess = 0
-				if rxnId in cobraModel.reactions: 
-					constraintsFromFile[direction][constraintType][rxnId[2:]+ sufix] = constraintsDict['reactions'][constraintType][rxnId]['score']
-					sucess = 1
-				if rxnId in cobraModel.reactions: 
-					constraintsFromFile[direction][constraintType][rxnId+ sufix] = constraintsDict['reactions'][constraintType][rxnId]['score']
-					sucess = 1
-				if rxnId in cobraModel.reactions: 
-					constraintsFromFile[direction][constraintType][rxnId+ sufix] = constraintsDict['reactions'][constraintType][rxnId]['score']
-					sucess = 1
-				if sucess == 0: constraintsDictForAnnotation[constraintType].add(rxnId)
-
-		for rxn in cobraModel.reactions:
-			for db in ['bigg', 'chebi', 'kegg', 'seed']:
-				if db not in rxn.annotation: continue 
-				for constraintType in ['soft', 'hard']:
-					for rxnId in constraintsDictForAnnotation[constraintType]:
-						if rxnId in cobraModelRxns[rxn.id.lower()][db]:
-							constraintsFromFile[direction][constraintType][rxn.id+ sufix] = constraintsDict['reactions'][constraintType][rxnId]['score']
-
-
-def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, constraints=None, reference=None):
-
-	
-	if verbose: print('\nPreparing to reconstruct model. ' + str(datetime.datetime.now()) + '\n')
+				
+				score = constraintsDict['reactions'][constraintType][rxnId]['score']
+				inModel = list()
+				if rxnId in cobraModel.reactions:
+					rxn = cobraModel.reactions.get_by_id(rxnId)
+					inModel.append(rxn)
+				else:
+				
+					for rxn in cobraModel.reactions:
+						if rxn.id == rxnId + '_reverseTemp': inModel.append(rxn)
+						elif rxn.id == rxnId + '_forwardTemp' : inModel.append(rxn)
+						
+					if not inModel:
+				
+						sucess = 0
+						for db in ['rhea', 'bigg', 'kegg', 'seed', '']:
+							for rxn in cobraModel.reactions:
+								if db not in rxn.annotation: continue
+								if rxnId in rxn.annotation[db] or rxnId.replace('_reverseTemp','').replace('_forwardTemp','') in rxn.annotation[db]:
+									inModel.append(rxn)
+							if inModel: break
+				
+				for rxn in inModel:
+					constraintsFromFile[constraintType][rxn.id] = score
+					
+					
+		#faz o mesmo para as pathways
+		for constraintType in constraintsDict['pathways']:
+			for pathwayIdLower in constraintsDict['pathways'][constraintType]:
+				score = constraintsDict['pathways'][constraintType][pathwayIdLower]['score']
+				#look for reactions translatable to kegg ids
+				for pathwayId in keggModules:
+					if pathwayId.lower() != pathwayIdLower: continue
+					for eachProcess in keggModules[pathwayId]['RxnsInvolved']:
+						for eachSet in eachProcess:
+							for eachKeggId in eachSet:
+								for rxn in cobraModel.reactions:
+									if 'kegg' not in rxn.annotation: continue
+									if eachKeggId in rxn.annotation['kegg']:
+										if rxn.id in constraintsFromFile[constraintType]:
+											#check if only entry has the same sign as the new entry
+											if constraintsFromFile[constraintType][rxn.id] * score > 0:
+												constraintsFromFile[constraintType][rxn.id] += 1
+											else: pass
+										else:
+											constraintsFromFile[constraintType][rxn.id] = score
+									
+				#look for reactions translatable to metacyc ids
+				for pathwayId in biocycPathways:
+					if pathwayId.lower() != pathwayIdLower: continue
+					for eachBiocycId in biocycPathways[pathwayId]['RxnsInvolved']:
+						for rxn in cobraModel.reactions:
+							if 'metacyc' not in rxn.annotation: continue
+							if eachBiocycId in rxn.annotation['metacyc']:
+								if rxn.id in constraintsFromFile[constraintType]:
+									#check if only entry has the same sign as the new entry
+									if constraintsFromFile[constraintType][rxn.id] * score > 0:
+										constraintsFromFile[constraintType][rxn.id] += 1
+									else: pass
+								else:
+									constraintsFromFile[constraintType][rxn.id] = score
+									
 		
-	
-	pickle_file_path = os.path.join(project_dir, 'data/generated', 'uniprotToRheaRxns.pickle')
-	with open(pickle_file_path, 'rb') as f:
-		uniprotToRheaRxns = pickle.load(f)
+		#manipulate hard constraints to remove same reaction with two directions from hard constraints
+		hardInconsistent = dict()
+		for cobraId in constraintsFromFile['hard']:
+			cobraIdSimple = cobraId.replace('forwardTemp', '').replace('reverseTemp', '')
+			if cobraIdSimple in hardInconsistent: hardInconsistent[cobraIdSimple] += 1
+			else: hardInconsistent[cobraIdSimple] = 1
+		for cobraIdSimple in hardInconsistent:
+			if hardInconsistent[cobraIdSimple] > 1:
+				del constraintsFromFile['hard'][cobraIdSimple+'forwardTemp']
+				del constraintsFromFile['hard'][cobraIdSimple+'reverseTemp']
+		
+		
+		return constraintsFromFile
+
+
+
+
+def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, constraintsFilePath=None, reference=None):
+
+
+
+	if verbose: print('\nPreparing to reconstruct model. ' + str(datetime.now()) + '\n')
+
 
 	if outputfile:
 		model_id = os.path.splitext(os.path.basename(outputfile))[0]
@@ -268,6 +294,8 @@ def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, co
 			print('Unable to create output folder:', outputfolder)
 			return
 
+	saveProgressFile(3, outputfolder)
+
 
 	try:
 		try:
@@ -279,8 +307,6 @@ def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, co
 			pickle_file_path = os.path.join(project_dir, 'data/generated', 'reframedUniversalModel.pickle')
 			with open(pickle_file_path, 'rb') as f:
 				reframedModel = pickle.load(f)
-				
-			a = cobraModel.reactions[0].compartment
 		
 		except:
 			#try opening universal model directely from its .XML file
@@ -310,29 +336,31 @@ def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, co
 	except IOError:
 		raise IOError(f'Failed to load universe model: {universe}\n')
 		
-		
 
 	#load constraints
-	constraintsFromFile = {'forward':{'soft':dict(),'hard':dict()},'reverse':{'soft':dict(),'hard':dict()}}
-	if constraints: loadConstraints(constraints, constraintsFromFile, cobraModel, reframedModel)
+	
+	if constraintsFilePath: constraintsFromFile = loadConstraints(constraintsFilePath, cobraModel, reframedModel)
+	else: constraintsFromFile = {'soft':dict(),'hard':dict()}
 
-	#create soft_constraints based on taxonomy
-	soft_constraints, rxnsInSoftSyn, taxoOfTarget, rheaWithSameSyn = taxonomyBasedConstraints(inputFileName, cobraModel)
+	#create constraintsFromTaxonomy based on taxonomy
+	constraintsFromTaxonomy, rxnsInTaxonomyConstraints, taxoOfTarget, rheaWithSameSyn, rxnsFromUniprot = taxonomyBasedConstraints(inputFileName, cobraModel)
+	saveProgressFile(4, outputfolder)
 
 	#se for DNA, roda prodigal para encontrar ORFs e traduzir as sequencias.
 	inputfileNew, geneAndProteinNamePerSeqId = findOrfs(inputFileName)
+	saveProgressFile(8, outputfolder)
 
-	
 	#parse_diamond_output
 	filesList = os.listdir()
-	if verbose: print('Running diamond...')
 	diamond_db = project_dir + config.get('generated', 'diamond_db')
 	
 	if model_id + '-Diamond.tsv' in filesList: blast_output = model_id + '-Diamond.tsv'
 	elif inputFileName + '-Diamond.tsv' in filesList: blast_output = inputFileName + '-Diamond.tsv'
-	else: blast_output = model_id + '-Diamond.tsv'
+	else: blast_output = model_id.split('-model')[0] + '-Diamond.tsv'
 	
 	if blast_output not in filesList or os.path.getsize(blast_output) == 0:
+		
+		if verbose:  print('Running diamond: ' + str(datetime.now()) + '\n')
 		exit_code = execute_diamond_blast(inputfileNew, 'protein', blast_output, diamond_db, diamond_args, verbose)
 
 		if exit_code is None:
@@ -344,71 +372,35 @@ def maincall(inputFileName, outputfile=None, diamond_args=None, verbose=True, co
 			if diamond_args is not None:
 				print('Incorrect diamond args? Please check documentation or use default args.')
 			return
+			
+		if verbose:  print('Finished diamond: ' + str(datetime.now()) + '\n')
+			
+	saveProgressFile(30, outputfolder)
 
 	diamondResult = parse_diamond_output(blast_output)
 	
-	rxnsScores, rheaIdToGene, rxnsCobraToreframedModel, soft_constraints_pathways, bestPerReadSimplified, softPositiveNewRxn, relevantRxnsPerGeneInModel = reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, reframedModel, uniprotToRheaRxns, soft_constraints, rxnsInSoftSyn, verbose)
+	rxnsScores, rheaIdToGene, bestMatchPerRead, singleRxnsInGenes = reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, reframedModel, constraintsFromTaxonomy, constraintsFromFile, rxnsInTaxonomyConstraints, rxnsFromUniprot, outputfolder, verbose)
+	
+	saveProgressFile(40, outputfolder)
 	
 	if rxnsScores is None:
 		print('The input genome did not match sufficient genes/reactions in the database.')
 		return
 	
-
-	#include in rxnsScores reactions from reference model
-	if reference:
-		try:
-			reframedModelReference = cobra.io.read_sbml_model(reference)
-			
-			for cobraObject in [reframedModelReference.reactions, reframedModelReference.metabolites]:
-				for rxn in cobraObject:
-					for db in rxn.annotation:
-						if type(rxn.annotation[db]) == type(''):
-							rxn.annotation[db] = [rxn.annotation[db]]
-			
-		except IOError:
-			raise IOError(f'Failed to load reference model')
-		
-		rxnWithGenes = set()
-		rxnBoundary = set()
-		rxnWithoutGenes = set()
-		
-		for rxn in reframedModelReference.reactions:
-
-			if rxn.genes:
-				for db in rxn.annotation:
-					for synId in rxn.annotation[db]: rxnWithGenes.add(synId)
-				rxnWithGenes.add(rxn.id)
-					
-			elif rxn in reframedModelReference.boundary:
-				for db in rxn.annotation:
-					for synId in rxn.annotation[db]: rxnBoundary.add(synId)
-				rxnBoundary.add(rxn.id)
-
-			else:
-				for db in rxn.annotation:
-					for synId in rxn.annotation[db]: rxnWithoutGenes.add(synId)
-				rxnWithoutGenes.add(rxn.id)
-					
-		rxnsFromReference = {'rxnWithGenes':rxnWithGenes, 'rxnBoundary':rxnBoundary, 'rxnWithoutGenes':rxnWithoutGenes}
-		
-		print('\n')
-		print('len(rxnWithGenes) = ' + str(len(rxnWithGenes)))
-		print('len(rxnBoundary) = ' + str(len(rxnBoundary)))
-		print('len(rxnWithoutGenes) = ' + str(len(rxnWithoutGenes)))
-		print('\n')
-		
-	else: rxnsFromReference = {'rxnWithGenes':set(), 'rxnBoundary':set(), 'rxnWithoutGenes':set()}
-
+	useReferenceModelData(reference, cobraModel, rxnsScores)
 	
-	if verbose: print('All in place! Starting to reconstruct model. ' + str(datetime.datetime.now()) + '\n')
+	if verbose: print('All in place! Starting to reconstruct model. ' + str(datetime.now()) + '\n')
 
 
-	model = prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRheaRxns, inputFileName, rxnsCobraToreframedModel, soft_constraints_pathways, bestPerReadSimplified, 
-				taxoOfTarget, rheaWithSameSyn, softPositiveNewRxn, constraintsFromFile, rxnsFromReference, relevantRxnsPerGeneInModel)
+	model = prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, bestMatchPerRead, 
+				taxoOfTarget, rheaWithSameSyn, singleRxnsInGenes, outputfolder, outputfile)
 
 	if model is None:
 		print("Failed to build model.")
+		saveProgressFile("Failed to build model.", outputfolder)
 		return
+		
+	saveProgressFile(99, outputfolder)
 
 
 def main():
@@ -447,7 +439,7 @@ def main():
 		outputfile=args.output,
 		diamond_args=args.diamond_args,
 		verbose=args.verbose,
-		constraints=args.constraints,
+		constraintsFilePath=args.constraints,
 		reference=args.reference,
 	)
 

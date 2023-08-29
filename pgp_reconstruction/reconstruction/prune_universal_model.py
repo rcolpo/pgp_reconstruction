@@ -1,23 +1,60 @@
 import pickle
 from pgp_reconstruction import project_dir
 import cobra
-import datetime
+from datetime import datetime
 import os
 import copy
 import numpy as np
 import re
 
 from pgp_reconstruction.reconstruction.makeEssentialRxns import makeEssentialGenesEssential
+from pgp_reconstruction.cli.util import saveProgressFile
+from pgp_reconstruction.reconstruction.scoring import findPathways
 
 from reframed.solvers import solver_instance
 from reframed.solvers.solver import VarType
 from reframed.solvers.solution import Status
 
+def includePathways(cobraModel, biocycPathways, rxnsPerModules):
+		
+	pickle_file_path = os.path.join(project_dir, 'data/generated', 'keggModules.pickle')
+	with open(pickle_file_path, 'rb') as f:
+		keggModules = pickle.load(f)
+	
+	dbToRxnsInModel = dict()
+	for rxn in cobraModel.reactions:
+		for db in ['metacyc', 'kegg']:
+			if db not in rxn.annotation: continue
+			for rxnId in rxn.annotation[db]:
+				if rxnId not in dbToRxnsInModel:
+					dbToRxnsInModel[rxnId] = set()
+				dbToRxnsInModel[rxnId].add(rxn)
+	
+	minPathResult = findPathways(list(dbToRxnsInModel.keys()))
+	
+	#map biocyc/kegg rxns to rxn In model
+	for pathway in minPathResult:
+		if pathway not in minPathResult: continue
+		
+		for pathway in biocycPathways:
+			for rxnId in biocycPathways[pathway]['RxnsInvolved']:
+				if rxnId not in dbToRxnsInModel: continue
+				for rxn in dbToRxnsInModel[rxnId]:
+					if 'MetaCyc pathways' not in rxn.annotation: rxn.annotation['MetaCyc pathways'] = list()
+					rxn.annotation['MetaCyc pathways'].append(biocycPathways[pathway]['name'])
 
+		for pathway in rxnsPerModules:
+			for rxnId in rxnsPerModules[pathway]:
+				if rxnId not in dbToRxnsInModel: continue
+				for rxn in dbToRxnsInModel[rxnId]:
+					if 'KEGG pathways' not in rxn.annotation: rxn.annotation['KEGG pathways'] = list()
+					rxn.annotation['KEGG pathways'].append(keggModules[pathway]['name'])	
+	
+	
 
-def initSolver(reframedModel, positiveInObjective, constraintsFromFile, cobraModel=None, firstOptimization=0, eps=1e-3, bigM=1000, min_growth=0.1):
+def initSolver(reframedModel, positiveInObjective, cobraModel=None, firstOptimization=0, eps=1e-3, bigM=1000, min_growth=0.1):
 
-	#solver5 = initSolver(reframedModel, positiveInSolution|positiveDiffusion, constraintsFromFile) # essentialRxnsInSpec = set()
+	#solver5 = initSolver(reframedModel, positiveInSolution|positiveDiffusion) # essentialRxnsInSpec = set()
 
 	#multiple optimization problems are solved. To avoid repetition, a function is used to create the problem.
 
@@ -122,10 +159,9 @@ def initSolver(reframedModel, positiveInObjective, constraintsFromFile, cobraMod
 	
 def ensureFluxOnBiomass(activeRxnsreframedId3, possibleToRemove, reframedModel):
 
-	constraintsFromFile = {'forward':{'soft':dict(),'hard':dict()},'reverse':{'soft':dict(),'hard':dict()}}
 	positiveInObjective =  activeRxnsreframedId3
 	
-	solver5 = initSolver(reframedModel, positiveInObjective, constraintsFromFile)
+	solver5 = initSolver(reframedModel, positiveInObjective)
 
 	objective = {}
 	for rxnId in reframedModel.reactions:
@@ -144,14 +180,14 @@ def ensureFluxOnBiomass(activeRxnsreframedId3, possibleToRemove, reframedModel):
 	solver5.update()
 	solver5.set_objective(linear=objective, minimize=False)
 	
-	print('\nStart solving 5: ' + str(datetime.datetime.now()))
+	print('\nStart solving 5: ' + str(datetime.now()))
 	solution5 = solver5.solve(emphasis=2, timelimit=600)
 	
 	if solution5.status != Status.OPTIMAL:
-		print('\nStarting to solve 3.2: ' + str(datetime.datetime.now()))
+		print('\nStarting to solve 3.2: ' + str(datetime.now()))
 		solution5 = solver5.solve(timelimit=3600)
 	
-	print('\nSolved 5: ' + str(datetime.datetime.now()))
+	print('\nSolved 5: ' + str(datetime.now()))
 	
 	with open('solution5.pickle', 'wb') as handle:
 			pickle.dump(solution5, handle, protocol=4)
@@ -165,11 +201,11 @@ def includeGenesRules(cobraModel, rheaIdToGene):
 	rxnsAndGenes = dict()
 	for rxn in cobraModel.reactions:
 		
-		for eachDict in rheaIdToGene['bestPerReadSimplified']:
+		for eachDict in rheaIdToGene['bestMatchPerRead']:
 			if 'R_' + rxn.id in eachDict['rxns']:
 				if rxn.id not in rxnsAndGenes:
 					rxnsAndGenes[rxn.id] = set()
-				rxnsAndGenes[rxn.id].add(eachDict['gene'])
+				rxnsAndGenes[rxn.id].add(eachDict['gene'].replace(',','.').replace('(','').replace(')',''))
 				
 		if rxn.id not in rxnsAndGenes:
 			bestMatch = dict()
@@ -195,22 +231,17 @@ def includeGenesRules(cobraModel, rheaIdToGene):
 		for gene in rxnsAndGenes[rxnId]:
 			if gene not in genesToRxns: genesToRxns[gene] = list()
 			genesToRxns[gene].append(rxnId)
-	
-
-	essentialRxns_Teoretical = set()
-	for rxnId in rxnsAndGenes:
-		essentialRxns_Teoretical.add(cobraModel.reactions.get_by_id(rxnId))
 		
 	essentialRxnsIds_Teoretical = set()
 	for rxnId in rxnsAndGenes:
 		essentialRxnsIds_Teoretical.add(rxnId)
 	
-	return genesToRxns, essentialRxns_Teoretical, essentialRxnsIds_Teoretical
+	return genesToRxns, essentialRxnsIds_Teoretical
 	
 	
 
-def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, rheaIdToGene, uniprotToRheaRxns, rxnsScores, inputFileName, spontaneousRheaRxns, constraintsFromFile):
-	#status = savereframeddModel(reframedModel, solution1, passiveDiffusion, cobraModel, rheaIdToGene, uniprotToRheaRxns, rxnsScores, inputFileName, spontaneousRheaRxns, constraintsFromFile)
+def saveReframedModel(reframedModel, solution2, passiveDiffusion, cobraModel, rheaIdToGene, rxnsScores, outputfile, spontaneousRheaRxns, biocycPathways, rxnsPerModules, outputfolder):
+	#status = saveReframedModel(reframedModel, solution1, passiveDiffusion, cobraModel, rheaIdToGene, rxnsScores, outputfile, spontaneousRheaRxns)
 	
 	print('\nFinalizing model\n')
 
@@ -218,7 +249,7 @@ def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, r
 	activeRxns3 = set()
 	activeRxnsreframedId3 = set()
 	for rxnId in reframedModel.reactions:
-		if ('yr_' + rxnId in solution3.values and solution3.values['yr_' + rxnId] > 1e-5) or ('yf_' + rxnId in solution3.values and solution3.values['yf_' + rxnId] > 1e-5) or (abs(solution3.values[rxnId]) > 1e-5):
+		if ('yr_' + rxnId in solution2.values and solution2.values['yr_' + rxnId] > 1e-5) or ('yf_' + rxnId in solution2.values and solution2.values['yf_' + rxnId] > 1e-5) or (abs(solution2.values[rxnId]) > 1e-5):
 			activeRxns3.add(rxnId[2:].replace('__45__','-').replace('__46__','.').replace('__43__','+').replace('_forwardTemp','').replace('_reverseTemp',''))
 			activeRxnsreframedId3.add(rxnId)
 				
@@ -294,9 +325,10 @@ def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, r
 					
 		activeRxns3 = activeRxns3|activeRxns5
 			
+	saveProgressFile(96, outputfolder)
 			
-	##cria um novo modelo apenas com as reacoes com fluxo em solution5 e solution3. Eh mais rapido que deletar as reacoes que nao funcionam
-	#find metabolites in reactions on solution5 and solution3
+	##cria um novo modelo apenas com as reacoes com fluxo em solution5 e solution2. Eh mais rapido que deletar as reacoes que nao funcionam
+	#find metabolites in reactions on solution5 and solution2
 	metsToInclude = set()
 	rxnsToInclude = set()
 	for rxn in cobraModel.reactions:
@@ -305,6 +337,7 @@ def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, r
 			for met in rxn.metabolites:
 				metsToInclude.add(met.id)
 	
+	
 	#check		
 	passiveDiffusionInC = {metId.replace('_e','_c') for metId in passiveDiffusion}
 	passiveToInclude = passiveDiffusionInC.intersection(metsToInclude)
@@ -312,6 +345,7 @@ def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, r
 	passiveToInclude = passiveToInclude-passiveAlreadyIncluded
 	passiveDiffusionInE = {metId.replace('_c','_e') for metId in passiveToInclude}
 	metsToInclude = metsToInclude|passiveDiffusionInE
+	
 	
 	#find transport and exchange reactions
 	if passiveDiffusionInE:
@@ -368,32 +402,111 @@ def savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, r
 		my_reaction.lower_bound = rxn.lower_bound
 		my_reaction.upper_bound = rxn.upper_bound
 
-	finalModel.slim_optimize()
+	#identify pathways and include information in each reaction
+	includePathways(cobraModel, biocycPathways, rxnsPerModules)
 
+	saveProgressFile(97, outputfolder)
 	
 	for sufix in [''] + list(range(1,100)):
-		if os.path.isfile(os.path.splitext(os.path.basename(inputFileName))[0] + str(sufix) + ".xml"): continue
+		if os.path.isfile(os.path.splitext(os.path.basename(outputfile))[0] + str(sufix) + ".xml"): continue
 		else: 
-			cobra.io.write_sbml_model(finalModel, os.path.splitext(os.path.basename(inputFileName))[0] + str(sufix) + ".xml")
+			cobra.io.write_sbml_model(finalModel, os.path.splitext(os.path.basename(outputfile))[0] + str(sufix) + ".xml")
 			break
 	return 1
 		
-
-
-def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRheaRxns, inputFileName, rxnsCobraToreframedModel, soft_constraints_pathways, bestPerReadSimplified,
-				taxoOfTarget, rheaWithSameSyn, softPositiveNewRxn, constraintsFromFile, rxnsFromReference, relevantRxnsPerGeneInModel,
-				min_growth=0.1, min_atpm=0.1, eps=1e-3, bigM=1e3, default_score=-6.0,
-				soft_score=10.0, ref_score=0.0, solver=None, debug_output=None, rsink = None, minimumMedia=False):
-				
 		
+def lowerScoreFromPromiscousEnzymes(cobraModel, biocycPathways, rxnsPerModules, rxnFromSolutionWithFlux, singleRxnsInGenes, rxnsInSol1, rheaIdToGene, rxnsScores):
+	#some enzymes catalize multiple reactions. Maybe, just one of these reactions is important of the organism. This function make negative the score of reactions not present in almost complete pathways, or with not flux in pFBA. The score is only changed if such reaction is, in the ezyme-reaction association, always togther with a reaction associated as relevant.
+	
+
+	dbToRxnsInModel = dict()
+	for rxn in cobraModel.reactions:
+		if 'R_' + rxn.id not in rxnsInSol1: continue
+		for db in ['metacyc', 'kegg']:
+			if db not in rxn.annotation: continue
+			for rxnId in rxn.annotation[db]:
+				if rxnId not in dbToRxnsInModel:
+					dbToRxnsInModel[rxnId] = set()
+				dbToRxnsInModel[rxnId].add(rxn.id)
+	
+	metacycPlusKeggInModel = set(dbToRxnsInModel.keys())
+	minPathResult = findPathways(metacycPlusKeggInModel)
+	
+
+	#check completness of all big biocyc pathway
+	rxnsInPathways = set()
+	for pathwayBiocyc in minPathResult:
+		if pathwayBiocyc not in biocycPathways: continue
+		synInModel = biocycPathways[pathwayBiocyc]['RxnsInvolved'].intersection(metacycPlusKeggInModel)
+		if len(synInModel) / len(biocycPathways[pathwayBiocyc]['RxnsInvolved']) >= 0.5:
+			for synId in synInModel: 
+				for rxnId in dbToRxnsInModel[synId]:
+					rxnsInPathways.add(rxnId)
+				
+	#check completness of all big kegg pathway
+	for pathwayKegg in minPathResult:
+		if pathwayKegg not in rxnsPerModules: continue
+		synInModel = rxnsPerModules[pathwayKegg].intersection(metacycPlusKeggInModel)
+		if len(synInModel) / len(rxnsPerModules[pathwayKegg]) >= 0.5:
+			for synId in synInModel: 
+				for rxnId in dbToRxnsInModel[synId]:
+					rxnsInPathways.add(rxnId)
+
+	
+	toKeep = rxnsInPathways|rxnFromSolutionWithFlux|singleRxnsInGenes.intersection(rxnsInSol1)
+	
+	allRxnsFromGenes = set()
+	for eachDict in rheaIdToGene['bestMatchPerRead']:
+			for rxnId in eachDict['rxns']: allRxnsFromGenes.add(rxnId)
+	
+
+	for rxnId in allRxnsFromGenes - toKeep:
+		sucess = 1
+		for eachDict in rheaIdToGene['bestMatchPerRead']:
+			if rxnId not in eachDict['rxns']: continue
+			noPriority = eachDict['rxns'] - toKeep
+			if not noPriority or len(noPriority) == eachDict['rxns']: 
+				sucess = 0
+				break
+			
+		#the score should only be changed if the reaction is together, in every gene, with reactions present in toKeep
+		if sucess == 1 and rxnsScores[rxnId] > 0: 
+			rxnsScores[rxnId] = -0.1
+			
+	return toKeep
+	
+def keepOneRheaSyn(rheaWithSameSyn, toKeep, rxnsScores, rheaIdToGene):
+	#because the way the universal model was created, some rhea reactions can be synonims of other rhea rxns.Try to keep only one with a positive score, if possible.
+	
+	positiveScore = {rxnId for rxnId in rxnsScores if rxnsScores[rxnId] > 0}
+	
+	for rxnsSet in rheaWithSameSyn:
+		toKeepInSet = rxnsSet.intersection(toKeep)
+		if toKeepInSet and len(toKeepInSet) != len(rxnsSet):
+			notKeepInSet = rxnsSet - toKeepInSet
+			notKeepPositive = notKeepInSet.intersection(positiveScore)
+			if not notKeepPositive: continue
+		
+			for rxnId in notKeepPositive:
+				sucess = 1
+				for eachDict in rheaIdToGene['bestMatchPerRead']:
+					if rxnId not in eachDict['rxns']: continue
+					if not toKeepInSet.intersection(eachDict['rxns']):
+						sucess = 0
+						break
+						
+				if sucess == 1 and rxnsScores[rxnId] > 0: 
+					rxnsScores[rxnId] = -0.1
+
+
+def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, bestMatchPerRead,
+				taxoOfTarget, rheaWithSameSyn, singleRxnsInGenes, outputfolder, outputfile,
+				min_growth=0.1, eps=1e-3, bigM=1e3, default_score=-6.0, solver=None, minimumMedia=False):
+
 
 	pickle_file_path = os.path.join(project_dir, 'data/generated', 'spontaneousRedundant.pickle')
 	with open(pickle_file_path, 'rb') as f:
 		spontaneousRheaRxns = pickle.load(f)
-		
-	pickle_file_path = os.path.join(project_dir, 'data/generated', 'superPathsDict.pickle')
-	with open(pickle_file_path, 'rb') as f:
-		superPathsDict = pickle.load(f)
 		
 	pickle_file_path = os.path.join(project_dir, 'data/generated', 'rheaRxnsAndTax.pickle')
 	with open(pickle_file_path, 'rb') as f:
@@ -402,19 +515,16 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 	pickle_file_path = os.path.join(project_dir, 'data/generated', 'chebiMets.pickle')
 	with open(pickle_file_path, 'rb') as f:
 		chebiMets = pickle.load(f)
-
+		
 	pickle_file_path = os.path.join(project_dir, 'data/generated', 'biocycPathways.pickle')
 	with open(pickle_file_path, 'rb') as f:
 		biocycPathways = pickle.load(f)
-
+		
 	pickle_file_path = os.path.join(project_dir, 'data/generated', 'rxnsPerModules.pickle')
 	with open(pickle_file_path, 'rb') as f:
 		rxnsPerModules = pickle.load(f)
 		
-	
-		
-
-	metsFromPseudomonas = {}
+	saveProgressFile(41, outputfolder)
 
 	base_score = min(rxnsScores.values())
 	default_score = base_score -2
@@ -429,7 +539,7 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 			if 'metabolite' in chebiMets[chebiId]['relationship']: metabolitesRelationship.add(chebiId)
 			withWithBiologicalRole.add(chebiId)
 
-	genesToRxns, essentialRxns_Teoretical, essentialRxnsIds_Teoretical = includeGenesRules(cobraModel, rheaIdToGene)	
+	genesToRxns, essentialRxnsIds_Teoretical = includeGenesRules(cobraModel, rheaIdToGene)	
 		
 	rheaRxnsAndSyn = dict()
 	biomass = reframedModel.biomass_reaction
@@ -441,6 +551,8 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 				rheaRxnsAndSyn[idInreframed].add(rheaRxn)
 
 	rxnsScores[biomass] = 50
+	
+	saveProgressFile(47, outputfolder)
 
 	#facilitates the inclusion of reactions of transport by passive diffusion 
 	passiveDiffusion = set()
@@ -550,36 +662,6 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 			else: rxnsScores[rxnId] += scoreToIncrese[taxoOfTarget.index(eachTxLevel)]
 	
 	
-	##include soft constraints in objective
-	#format: constraintsFromFile = {'forward':{'soft':dict(),'hard':dict()},'reverse':{'soft':dict(),'hard':dict()}}
-	for cobraId in constraintsFromFile['forward']['soft']:
-		rxnId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-		if reframedModel.reactions[rxnId].ub > 0:
-			if rxnsScores[rxnId] > 0 and constraintsFromFile['forward']['soft'][cobraId] > 0 and rxnsScores[rxnId] > constraintsFromFile['forward']['soft'][cobraId]: continue
-			if rxnsScores[rxnId] < 0 and constraintsFromFile['forward']['soft'][cobraId] < 0 and rxnsScores[rxnId] < constraintsFromFile['forward']['soft'][cobraId]: continue
-			rxnsScores[rxnId] = constraintsFromFile['forward']['soft'][cobraId]
-			sucesso = 1
-	for cobraId in constraintsFromFile['forward']['hard']:
-		rxnId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-		if reframedModel.reactions[rxnId].ub > 0:
-			if constraintsFromFile['forward']['hard'][cobraId] < 0: rxnsScores[rxnId] = -100
-			if constraintsFromFile['forward']['hard'][cobraId] > 0: rxnsScores[rxnId] = 100
-			sucesso = 1	
-	for cobraId in constraintsFromFile['reverse']['soft']:
-		rxnId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-		if reframedModel.reactions[rxnId].lb < 0:
-			if rxnsScores[rxnId] > 0 and constraintsFromFile['reverse']['soft'][cobraId] > 0 and rxnsScores[rxnId] > constraintsFromFile['reverse']['soft'][cobraId]: continue
-			if rxnsScores[rxnId] < 0 and constraintsFromFile['reverse']['soft'][cobraId] < 0 and rxnsScores[rxnId] < constraintsFromFile['reverse']['soft'][cobraId]: continue
-			rxnsScores[rxnId] = constraintsFromFile['reverse']['soft'][cobraId]
-			sucesso = 1
-	for cobraId in constraintsFromFile['reverse']['hard']:
-		rxnId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-		if reframedModel.reactions[rxnId].lb < 0:
-			if constraintsFromFile['reverse']['hard'][cobraId] < 0: rxnsScores[rxnId] = -100
-			if constraintsFromFile['reverse']['hard'][cobraId] > 0: rxnsScores[rxnId] = 100
-			sucesso = 1
-	
-	
 	#reactions using mets with biological relevance, receive a boost in its score.
 	for rxn in cobraModel.reactions:
 		idInreframed = 'R_'+rxn.id.replace('-','__45__').replace('.','__46__').replace('+','__43__')
@@ -590,31 +672,11 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 				if chebiId in withWithBiologicalRole: rxnWithRelevantMet = 1
 		if rxnWithRelevantMet == 1 and not -0.01 <= rxnsScores[idInreframed] < 0:
 			rxnsScores[idInreframed] += 0.01
-	
-
-	#use rxnsFromReference to increase scores
-	for rxn in cobraModel.reactions:
-		idInreframed = 'R_'+rxn.id.replace('-','__45__').replace('.','__46__').replace('+','__43__')
-		for db in rxn.annotation:
-		
-			if rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db]):
-				if idInreframed not in rxnsScores or rxnsScores[idInreframed] < 0.1: 
-					print(rxn.id + ' ' + str(rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db])))
-					rxnsScores[idInreframed] = 0.1
 				
-			if rxnsFromReference['rxnWithoutGenes'].intersection(rxn.annotation[db]):
-				if rxnsScores[idInreframed] < -0.1: 
-					rxnsScores[idInreframed] = -0.1
-				
-			#if rxnsFromReference['rxnBoundary'].intersection(rxn.annotation[db]):
-			#	if rxnsScores[idInreframed] < 0: 
-			#		rxnsScores[idInreframed] = rxnsScores[idInreframed]/2
 	
-
-	print('\nLine 626: ' + str(datetime.datetime.now()))
 
 	positiveInObjective = []
-	solver1 = initSolver(reframedModel, positiveInObjective, constraintsFromFile, cobraModel=cobraModel, firstOptimization=1)
+	solver1 = initSolver(reframedModel, positiveInObjective, cobraModel=cobraModel, firstOptimization=1)
 	
 	#creates objective function
 	objective = {}
@@ -634,35 +696,48 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 	
 	
 	solver1.set_objective(linear=objective, minimize=False)
-	print('\nStarting to solve 1: ' + str(datetime.datetime.now()))
+	print('\nStarting to solve 1: ' + str(datetime.now()))
 	solution1 = solver1.solve(emphasis=1, timelimit=300)#if does not find in 5 minutes, give up
 	
+	saveProgressFile(60, outputfolder)
+	
 	if solution1.status == Status.OPTIMAL: 
-		print('Solved 1: ' + str(datetime.datetime.now()) + '\n')
+		print('Solved 1: ' + str(datetime.now()) + '\n')
 	elif solution1.status == Status.UNKNOWN:
 		print('\nIt was not possible to solve the first optimization problem within the maximum time limit. The genome of the organism may be contaminated, incomplete or have the wring taxonomical assigment. Alternatively, try including additional constraints (like providing information on the culture medium) or increasing the maximum processing time.')
+		saveProgressFile("Failed to build model.", outputfolder)
 		return
 	else:
 		print('\nIt was not possible to find a solution to your problem. If you are using aditional constraints, try to relex them.')
+		saveProgressFile("Failed to build model.", outputfolder)
 		return
-
-	with open('solution1.pickle', 'wb') as handle:
-		pickle.dump(solution1, handle, protocol=4)
 
 	
 	#start second optimization	
 	
 	#makeEssentialGenesEssential specific for target organism
-	deleted = makeEssentialGenesEssential(solution1, bestPerReadSimplified, rheaIdToGene, uniprotToRheaRxns, cobraModel, reframedModel, relevantRxnsPerGeneInModel)
+	deleted, rxnFromSolutionWithFlux = makeEssentialGenesEssential(solution1, bestMatchPerRead, rheaIdToGene, cobraModel, reframedModel, singleRxnsInGenes)
+	
+
 	cobraModel.remove_reactions(deleted)
 	toDeletereframed = ['R_' + rxnId.replace('-','__45__').replace('.','__46__').replace('+','__43__') for rxnId in deleted]
-	reframedModel.remove_reactions(toDeletereframed)
+	reframedModel.remove_reactions(toDeletereframed)	
+	
+	saveProgressFile(74, outputfolder)
 
 	#searching for the pathways present in solution1
 	rxnsInSol1 = set()
 	for rxnId in reframedModel.reactions:
 		if ('yr_' + rxnId in solution1.values and solution1.values['yr_' + rxnId] > 1e-5) or ('yf_' + rxnId in solution1.values and solution1.values['yf_' + rxnId] > 1e-5) or (abs(solution1.values[rxnId]) > 1e-5):
-			rxnsInSol1.add(rxnId.replace('_forwardTemp','').replace('_reverseTemp',''))
+			rxnsInSol1.add(rxnId)
+			if '_forwardTemp' in rxnId: rxnsInSol1.add(rxnId.replace('_forwardTemp','_reverseTemp'))
+			if '_reverseTemp' in rxnId: rxnsInSol1.add(rxnId.replace('_reverseTemp','_forwardTemp'))
+		
+
+
+	toKeep = lowerScoreFromPromiscousEnzymes(cobraModel, biocycPathways, rxnsPerModules, rxnFromSolutionWithFlux, singleRxnsInGenes, rxnsInSol1, rheaIdToGene, rxnsScores)
+	keepOneRheaSyn(rheaWithSameSyn, toKeep, rxnsScores, rheaIdToGene)
+		
 		
 	#starting solution 3
 	positiveInObjective = set()
@@ -670,8 +745,7 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 		if rxnId in rxnsScores and rxnsScores[rxnId] >= 0: positiveInObjective.add(rxnId)
 	
 
-	#solver3 = initSolver(reframedModel, positiveInObjective, constraintsFromFile, essentialRxnsInSpec=essentialRxnsInSpec.intersection(rxnsInSol2OriginalIds))
-	solver3 = initSolver(reframedModel, positiveInObjective, constraintsFromFile)
+	solver2 = initSolver(reframedModel, positiveInObjective)
 	
 	
 	#creates objective function
@@ -680,53 +754,50 @@ def prune_model(reframedModel, cobraModel, rxnsScores, rheaIdToGene, uniprotToRh
 		
 		y_r, y_f = 'yr_' + rxnId, 'yf_' + rxnId
 
-		if y_f in solver3.pos_vars:
+		if y_f in solver2.pos_vars:
 			if rxnsScores[rxnId] < 0:
-				if rxnId.replace('_forwardTemp','').replace('_reverseTemp','') in rxnsInSol1: objective[y_f] = round(rxnsScores[rxnId],3)/2
-				else: objective[y_f] = round(rxnsScores[rxnId],3)
+				if rxnId in rxnsInSol1: objective[y_f] = round(rxnsScores[rxnId],3)/2
+				else: objective[y_f] = round(rxnsScores[rxnId],3)*2
 			elif rxnsScores[rxnId] == 0: objective[y_f] = -0.0001
 			else:
-				if rxnId.replace('_forwardTemp','').replace('_reverseTemp','') in rxnsInSol1: objective[y_f] = round(rxnsScores[rxnId],3)*2
+				if rxnId in rxnsInSol1: objective[y_f] = round(rxnsScores[rxnId],3)*2
 				else: objective[y_f] = round(rxnsScores[rxnId],3)
 
-		if y_r in solver3.neg_vars:
+		if y_r in solver2.neg_vars:
 			if rxnsScores[rxnId] < 0:
-				if rxnId.replace('_forwardTemp','').replace('_reverseTemp','') in rxnsInSol1: objective[y_r] = round(rxnsScores[rxnId],3)/2
-				else: objective[y_r] = round(rxnsScores[rxnId],3)
+				if rxnId in rxnsInSol1: objective[y_r] = round(rxnsScores[rxnId],3)/2
+				else: objective[y_r] = round(rxnsScores[rxnId],3)*2
 			elif rxnsScores[rxnId] == 0: objective[y_r] = -0.0001
 			else: 
-				if rxnId.replace('_forwardTemp','').replace('_reverseTemp','') in rxnsInSol1: objective[y_r] = round(rxnsScores[rxnId],3)*2
+				if rxnId in rxnsInSol1: objective[y_r] = round(rxnsScores[rxnId],3)*2
 				else: objective[y_r] = round(rxnsScores[rxnId],3)
 				
-	print('\nLine 651: ' + str(datetime.datetime.now()))
-				
-	solver3.update()
+	solver2.update()
 	
-	solver3.set_objective(linear=objective, minimize=False)
+	solver2.set_objective(linear=objective, minimize=False)
 	
-	print('\nStarting to solve 3: ' + str(datetime.datetime.now()))
-	
-	solution3 = solver3.solve(timelimit=600)
-	if solution3.status != Status.OPTIMAL:
-		print('\nStarting to solve 3.2: ' + str(datetime.datetime.now()))
-		solution3 = solver3.solve(emphasis=1, timelimit=3600)
+	#solution2 = solver2.solve(timelimit=600)
+	print('\nStarting to solve 2.1: ' + str(datetime.now()))
+	solution2 = solver2.solve(timelimit=600)
+	if solution2.status != Status.OPTIMAL:
+		print('\nStarting to solve 2.2: ' + str(datetime.now()))
+		solution2 = solver2.solve(emphasis=1, timelimit=600)
 
-	with open('solution3.pickle', 'wb') as handle:
-		pickle.dump(solution3, handle, protocol=4)
 		
+	saveProgressFile(94, outputfolder)
 	
-	if solution3.status == Status.OPTIMAL:
-		#send solution3 to create new model
-		status = savereframeddModel(reframedModel, solution3, passiveDiffusion, cobraModel, rheaIdToGene, uniprotToRheaRxns, rxnsScores, inputFileName, spontaneousRheaRxns, constraintsFromFile)
+	if solution2.status == Status.OPTIMAL:
+		#send solution2 to create new model
+		status = saveReframedModel(reframedModel, solution2, passiveDiffusion, cobraModel, rheaIdToGene, rxnsScores, outputfile, spontaneousRheaRxns, biocycPathways, rxnsPerModules, outputfolder)
 		return 1
-	if solution3.status == Status.UNKNOWN:
+	if solution2.status == Status.UNKNOWN:
 		print('\nIt was not possible to solve the first optimization problem within the manixum time limit. The genome of the organism may be contaminated or incomplete. Alternatively, try including additional constraints or increasing the maximum processing time.')
 	else:
 		print('\nIt was not possible to find a solution to your problem. If you are using aditional constraints, try to relex them.')
 		
 	print('\nUsing solution of previous optimization')
 		
-	status = savereframeddModel(reframedModel, solution1, passiveDiffusion, cobraModel, rheaIdToGene, uniprotToRheaRxns, rxnsScores, inputFileName, spontaneousRheaRxns, constraintsFromFile)
+	status = saveReframedModel(reframedModel, solution1, passiveDiffusion, cobraModel, rheaIdToGene, rxnsScores, outputfile, spontaneousRheaRxns, biocycPathways, rxnsPerModules, outputfolder)
 	return 0
 		
 		
