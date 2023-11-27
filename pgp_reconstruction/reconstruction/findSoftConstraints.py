@@ -188,8 +188,9 @@ def findBiocycRxnsInReferenceOrgs(taxonomicalLevelPerDb, dbToRheaRxns, dbToRheaM
 def findSimilarSpec(specName):
 	#encontra especies no KEGG Organisms e Biocyc que sao taxonomicamente proximos ao organismo de interesse
 	
+
 	pickle_file_TaxoNcbi = os.path.join(project_dir, 'data/generated', 'spectAndTaxoNcbi.pickle')
-	pickle_file_allSpecBioCyc = os.path.join(project_dir, 'data/generated', 'allSpecBioCyc.pickle')
+	pickle_file_allSpecBioCyc = os.path.join(project_dir, 'data/generated', 'allSpecBiocyc.pickle')
 	pickle_file_allSpecKegg = os.path.join(project_dir, 'data/generated', 'allSpecKegg.pickle')
 	with open(pickle_file_TaxoNcbi, 'rb') as f:
 		spectAndTaxoNcbi = pickle.load(f)
@@ -201,7 +202,8 @@ def findSimilarSpec(specName):
 
 	#find taxonomy classification of modelled organism
 	#se encontrou uma especie e sua taxonomia - o nome do arquivo eh provavelmente de uma especia
-	taxo = 0
+
+	taxo = list()
 	taxoOfTarget = 0
 	for eachOption in options:
 		for specKey in spectAndTaxoNcbi:
@@ -214,7 +216,7 @@ def findSimilarSpec(specName):
 	taxonomicalLevelPerDb = {'Kegg': dict(), 'Biocyc': dict()}
 	
 	if not taxo:
-		return taxonomicalLevelPerDb, list()
+		return taxonomicalLevelPerDb, taxo
 	
 	
 	if os.path.exists(pickle_file_allSpecBioCyc) and os.path.exists(pickle_file_allSpecKegg):
@@ -314,7 +316,6 @@ def taxonomyBasedConstraints(inputFileName, cobraModel):
 	dbToRheaRxns, dbToRheaMets, rheaWithSameSyn = findAllMetsAndRxnsTranslations(cobraModel)
 	
 	if not taxonomicalLevelPerDb['Kegg'] and not taxonomicalLevelPerDb['Biocyc']:  
-		sys.exit("It was not possible to identify closely related organisms. The file name should be the organism name (e.g. Escherichia coli.fasta), or the taxonomical classification (e.g. 'Bacteroides.fasta' or 'Bacteroidia.fasta' or 'Cyanobacteria.fasta')")
 		return constraintsFromTaxonomy, rxnsInTaxonomyConstraints, taxoOfTarget, rheaWithSameSyn, rxnsFromUniprot
 	
 	#check if 'allSpecBioCyc' and 'allSpecKegg' exist in data/generated folder. 

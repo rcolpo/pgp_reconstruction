@@ -88,7 +88,7 @@ pip install pgp_reconstruction
 PGP-Reconstruction automatically downloads and installs some dependencies during the first run, including: a slightly modified version of [MinPath](https://github.com/mgtools/MinPath), large databases from an [external server](https://files.ufz.de/~umb-pgp_reconstruction-01/), Prodigal from [its official GitHub repository](https://github.com/hyattpd/Prodigal/releases), and experimental data of gene essentiality from the [DEG database](http://origin.tubic.org/deg/public/index.php/download).
 
 However, PGP-Reconstruction cannot install all dependencies automatically. You will need to install the following external dependencies manually:
-- [Diamond](https://github.com/bbuchfink/diamond) (use the command `conda install -c bioconda diamond`)
+- [Diamond](https://github.com/bbuchfink/diamond) (use the command `conda install -c bioconda diamond` or download the [latest release here](https://github.com/bbuchfink/diamond/releases))
 - IBM [CPLEX](https://www.ibm.com/products/ilog-cplex-optimization-studio/cplex-optimizer) Optimizer. It is free for academic use.
 
 ### Troubleshooting

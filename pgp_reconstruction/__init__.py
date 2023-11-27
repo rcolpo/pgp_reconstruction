@@ -3,7 +3,7 @@ from configparser import ConfigParser
 from reframed import set_default_solver
 from reframed.solvers.solver import default_parameters, Parameter
 
-__version__ = '0.1.0'
+__version__ = '0.0.6'
 
 project_dir = os.path.abspath(os.path.dirname(__file__)) + '/'
 

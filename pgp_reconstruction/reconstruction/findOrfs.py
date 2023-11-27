@@ -108,7 +108,8 @@ def writeFasta(inputFileName):
 					
 	fileName = os.path.splitext(os.path.basename(inputFileName))[0]
 	
-	fileLocation = inputFileName.split(fileName)[0]
+	fileLocation = os.path.dirname(inputFileName)
+	
 	if fileLocation: fileLocation += '/'
 	
 	inputFileNameToWrite = fileLocation + fileName + '.fasta'
@@ -122,7 +123,7 @@ def writeFasta(inputFileName):
 def findOrfs(inputFileName):
 
 	#identifica se eh DNA ou proteina. Se for DNA, identifica ORFS e traduz para proteina.
-	
+
 	#check if file is from genbank. if genbank, create fasta file for alingment
 	if inputFileName.endswith('.gb') or inputFileName.endswith('.gbk') or inputFileName.endswith('.genbank') or inputFileName.endswith('.gbff'):
 		inputFileName = writeFasta(inputFileName)
@@ -150,20 +151,25 @@ def findOrfs(inputFileName):
 	if dnaCount == aminoCount:
 		fileName = os.path.basename(inputFileName)
 		filePath = inputFileName.replace(fileName,'')
-		fileNameAndExtension = os.path.splitext(fileName)
+		fileNameNoExtension = os.path.splitext(fileName)
 	
 		prodigalFile = ''
-		for fileName in os.path.join(project_dir, 'dependencies'):
-			if fileName in 'prodigal': prodigalFile = fileName
+		dependenciesFolder = os.path.join(project_dir, 'dependencies')
+		filesInFolder = [f for f in os.listdir(dependenciesFolder) if os.path.isfile(os.path.join(dependenciesFolder, f))]
+		
+		for fileName in filesInFolder:
+			if 'prodigal' in fileName: prodigalFile = fileName
 		if not prodigalFile: 
 			sys.exit('Could not locate prodigal file to identify ORF in input genome.')
 			
 		prodigalPath = os.path.join(project_dir, 'dependencies', prodigalFile)
-	
-		os.system(prodigalPath + ' -i "' + inputFileName + '" -a "' + filePath + fileNameAndExtension[0] + ' - ORFs.faa"')
+		
+		inputFileNameNew = filePath + fileNameNoExtension[0] + ' - ORFs.faa'
+		if not os.path.exists(inputFileNameNew): # if the file does not exist, run prodigal
+			os.system(prodigalPath + ' -i "' + inputFileName + '" -a "' + inputFileNameNew + '"')
 		prodigal = 1
 	
-		inputFileNameNew = filePath + fileNameAndExtension[0] + ' - ORFs.faa'
+		
 	else: inputFileNameNew = inputFileName
 	
 

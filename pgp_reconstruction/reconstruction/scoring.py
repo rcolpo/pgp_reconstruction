@@ -10,7 +10,7 @@ try:from pgp_reconstruction.dependencies.MinPath_master.MinPath import MinPathMa
 except: pass
 
 
-def useReferenceModelData(reference, cobraModel, rxnsScores):
+def useReferenceModelData(reference, referenceScore, cobraModel, rxnsScores):
 	#include in rxnsScores reactions from reference model
 	if reference:
 		try:
@@ -57,11 +57,12 @@ def useReferenceModelData(reference, cobraModel, rxnsScores):
 				if rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db]):
 					if idInreframed not in rxnsScores or rxnsScores[idInreframed] < 0.1: 
 						print(rxn.id + ' ' + str(rxnsFromReference['rxnWithGenes'].intersection(rxn.annotation[db])))
-						rxnsScores[idInreframed] = 0.1
+						rxnsScores[idInreframed] = referenceScore
 					
 				if rxnsFromReference['rxnWithoutGenes'].intersection(rxn.annotation[db]):
-					if rxnsScores[idInreframed] < -0.1: 
-						rxnsScores[idInreframed] = -0.1
+					if referenceScore > 0:
+						if rxnsScores[idInreframed] < -0.1: rxnsScores[idInreframed] = -0.1
+						else: rxnsScores[idInreframed] = referenceScore
 
 def findPrioritary(top50Simplified, categoriesCount, rxnsInTaxonomyConstraints, rxnsFromUniprot, rxnsInPathsFromSoft, rxnsInPathsNaive, subunits, geneAndProteinNamePerSeqId, swiss90tremble50SeqInfo, swissProtIds, firstloop = 1):
 	#first check if there is any match from rxnsInTaxonomyConstraints
@@ -381,8 +382,8 @@ def reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, refr
 						modelIdToDbDict[idInReframed].add(rxnIdInDb)
 					
 	soft_constraints_pathways = constraintsFromTaxonomy['metacyc']['pathways']|constraintsFromTaxonomy['kegg']['pathways']
-
-
+	
+	
 	rxnsInPathsFromSoft = set()
 	for eachPath in soft_constraints_pathways:
 		if eachPath in rxnsPerModules:
@@ -548,39 +549,39 @@ def reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, refr
 					subunits.append({'rxns': eachDict['rxns'] , 'subunit': subunitType, 'gene':eachDict['gene'], 'uniprotEntry':eachDict['uniprotEntry']})
 		
 		
-			#looking for rxns missing pathways present in the model
-			rxnsPresentInPathways = set()
-			for pathway in pathwaysPresent:
-				if pathway in biocycPathways:
-					if len(biocycPathways[pathway]['RxnsInvolved'].intersection(metacycRxnsInModel)) <= 3: continue
-					rxnsPresentInPathways = rxnsPresentInPathways | biocycPathways[pathway]['RxnsInvolved']
-				if pathway in rxnsPerModules:
-					if len(rxnsPerModules[pathway].intersection(metacycRxnsInModel)) <= 3: continue
-					rxnsPresentInPathways = rxnsPresentInPathways | rxnsPerModules[pathway]
-			
-			for metacycRxn in rxnsPresentInPathways:
-				if metacycRxn not in metacycToRheaDict: rxnsInTaxonomyConstraints.add(metacycRxn)# continue
-				else:
-					for rheaRxn in metacycToRheaDict[metacycRxn]: rxnsInTaxonomyConstraints.add(rheaRxn)
-					
-					
-			#find all pathways associated to all reactions matched
-			rxnsInMappedPaths = set()
-			for eachPath in biocycPathways:
-				if eachPath in biocycPathways:
-					if biocycPathways[eachPath]['RxnsInvolved'].intersection(metacycRxnsInModel):
-						for rxnId in biocycPathways[eachPath]['RxnsInvolved']: rxnsInMappedPaths.add(rxnId)
-				if eachPath in rxnsPerModules:
-					if rxnsPerModules[eachPath].intersection(metacycRxnsInModel):
-						for rxnId in rxnsPerModules[eachPath]: rxnsInMappedPaths.add(rxnId)
-						rxnsPresentInPathways = rxnsPresentInPathways | rxnsPerModules[eachPath]
-			
-			for metacycRxn in rxnsInMappedPaths:
-				if metacycRxn not in metacycToRheaDict: rxnsInPathsNaive.add(metacycRxn)# continue
-				else:
-					for rheaRxn in metacycToRheaDict[metacycRxn]: rxnsInPathsNaive.add(rheaRxn)
-					
-			saveProgressFile(36, outputfolder)
+		#looking for rxns missing pathways present in the model
+		rxnsPresentInPathways = set()
+		for pathway in pathwaysPresent:
+			if pathway in biocycPathways:
+				if len(biocycPathways[pathway]['RxnsInvolved'].intersection(metacycRxnsInModel)) <= 3: continue
+				rxnsPresentInPathways = rxnsPresentInPathways | biocycPathways[pathway]['RxnsInvolved']
+			if pathway in rxnsPerModules:
+				if len(rxnsPerModules[pathway].intersection(metacycRxnsInModel)) <= 3: continue
+				rxnsPresentInPathways = rxnsPresentInPathways | rxnsPerModules[pathway]
+		
+		for metacycRxn in rxnsPresentInPathways:
+			if metacycRxn not in metacycToRheaDict: rxnsInTaxonomyConstraints.add(metacycRxn)# continue
+			else:
+				for rheaRxn in metacycToRheaDict[metacycRxn]: rxnsInTaxonomyConstraints.add(rheaRxn)
+				
+				
+		#find all pathways associated to all reactions matched
+		rxnsInMappedPaths = set()
+		for eachPath in biocycPathways:
+			if eachPath in biocycPathways:
+				if biocycPathways[eachPath]['RxnsInvolved'].intersection(metacycRxnsInModel):
+					for rxnId in biocycPathways[eachPath]['RxnsInvolved']: rxnsInMappedPaths.add(rxnId)
+			if eachPath in rxnsPerModules:
+				if rxnsPerModules[eachPath].intersection(metacycRxnsInModel):
+					for rxnId in rxnsPerModules[eachPath]: rxnsInMappedPaths.add(rxnId)
+					rxnsPresentInPathways = rxnsPresentInPathways | rxnsPerModules[eachPath]
+		
+		for metacycRxn in rxnsInMappedPaths:
+			if metacycRxn not in metacycToRheaDict: rxnsInPathsNaive.add(metacycRxn)# continue
+			else:
+				for rheaRxn in metacycToRheaDict[metacycRxn]: rxnsInPathsNaive.add(rheaRxn)
+				
+		saveProgressFile(36, outputfolder)
 	saveProgressFile(38, outputfolder)
 
 
@@ -662,9 +663,14 @@ def reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, refr
 				if rheaId not in rxnsScores: rxnsScores[rheaId] = eachDict['scoreNormalized']
 				elif rxnsScores[rheaId] < eachDict['scoreNormalized']: rxnsScores[rheaId] = eachDict['scoreNormalized']
 	
+	
 	#cut off very high values
+	rxnBelonginToPaths = rxnsInPathsNaive|rxnsInTaxonomyConstraints
 	for rheaId in rxnsScores:
+		if rxnsScores[rheaId] > 0 and rheaId in rxnBelonginToPaths: rxnsScores[rheaId] = rxnsScores[rheaId]*1.5
+		
 		if rxnsScores[rheaId] > 10: rxnsScores[rheaId] = 10
+		if rxnsScores[rheaId] > 0.1 and rheaId not in rxnBelonginToPaths: rxnsScores[rheaId] = rxnsScores[rheaId]/1.5
 		
 
 	minScoreBase = min(rxnsScores.values())
@@ -707,15 +713,51 @@ def reaction_scoring(diamondResult, geneAndProteinNamePerSeqId, cobraModel, refr
 		rxnId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
 		
 		if rxnId in rxnsScores:
-			if constraintsFromFile['soft'][cobraId] * rxnsScores[rxnId] > 0: #if both have the same sign
-				if abs(constraintsFromFile['soft'][cobraId]) > abs(rxnsScores[rxnId]):
+			if constraintsFromFile['soft'][cobraId] > -1: #if greater than -1, means the user wants to allow the reaction to be present. Could be to force the reaction to be present (greater than 0), or to use the reaction as first option on gapfill (between -1 and 0)
+				if constraintsFromFile['soft'][cobraId] > rxnsScores[rxnId]:
 					rxnsScores[rxnId] = constraintsFromFile['soft'][cobraId]
+			else: #if lower than -1, the user does not want the reaction, even if there is ma match in uniprot 
+				rxnsScores[rxnId] = constraintsFromFile['soft'][cobraId]
 		else:
 			rxnsScores[rxnId] = constraintsFromFile['soft'][cobraId]
 			
 	for cobraId in constraintsFromFile['hard']:
 		rxnId = 'R_'+cobraId.replace('-','__45__').replace('.','__46__').replace('+','__43__')
 		rxnsScores[rxnId] = (constraintsFromFile['hard'][cobraId]/abs(constraintsFromFile['hard'][cobraId]))*100 # rxnsScores[rxnId] = 100, keeping the sign of the original constraint
+		
+	#include transport reactions related soft_constraints
+	for constraintsType in ['soft', 'hard']:
+		for cobraId in constraintsFromFile[constraintsType]:
+		
+			if not cobraId.startswith('EX_'): continue
+		
+			rxnOriginal = cobraModel.reactions.get_by_id(cobraId)
+			for met in rxnOriginal.metabolites: break
+
+			transport = set()
+			exchange = set()
+			other = set()
+			
+			for rxn in met.reactions:
+				
+				if rxnOriginal == rxn: continue
+				
+				if len(rxn.compartments) == 2: transport.add(rxn)
+				elif (rxn.products and not rxn.reactants) or (not rxn.reactants and rxn.products): exchange.add(rxn)
+				else: other.add(rxn)
+				
+			if not transport and other:
+				for rxnOther in other:
+					for met in rxnOther.metabolites:
+						for rxn in met.reactions:
+							if len(rxn.compartments) == 2: transport.add(rxn)
+							
+			for rxn in transport:
+				rxnId = 'R_'+rxn.id.replace('-','__45__').replace('.','__46__').replace('+','__43__')
+				if rxnId in rxnsScores: continue
+				if len(rxn.metabolites) > 2: rxnsScores[rxnId] = -0.01
+				else: rxnsScores[rxnId] = -0.02
+	
 		
 	#include reactions annotated by uniprot in the species	
 	for rheaId in rxnsFromUniprot:
