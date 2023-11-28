@@ -1,5 +1,6 @@
 import os
 from pgp_reconstruction import config, project_dir
+from pgp_reconstruction.cli.download_missing_data import download_missing_files
 
 import os
 import subprocess
